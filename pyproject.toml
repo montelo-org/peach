@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "peach"
+version = "0.1.0"
+description = ""
+authors = ["Sami @JUNIORCO <sami.juniorco@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+numpy = "^1.26.4"
+sounddevice = "^0.4.7"
+gpiozero = "^2.0.1"
+keyboard = "^0.13.5"
+soundfile = "^0.12.1"
+openai = "^1.33.0"
+pvporcupine = "^3.0.2"
+groq = "^0.8.0"
+serpapi = "^0.1.5"
+google-search-results = "^2.4.2"
+python-dotenv = "^1.0.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
