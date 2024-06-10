@@ -1,23 +1,30 @@
-import React from 'react';
-import logo from './logo.svg';
-import './App.css';
+import { useEffect, useState } from "react";
 
 function App() {
+  const [isTalking, setIsTalking] = useState(true);
+  const [backgroundAngle, setBackgroundAngle] = useState(45);
+
+  useEffect(() => {
+    if (isTalking) {
+      const interval = setInterval(() => {
+        setBackgroundAngle((prev) => (prev + 5) % 360);
+      }, 10);
+      return () => clearInterval(interval);
+    } else {
+      setBackgroundAngle(backgroundAngle);
+    }
+  }, [isTalking, backgroundAngle]);
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
+    <div
+      className="w-full h-screen"
+      style={{
+        background: `linear-gradient(${backgroundAngle}deg, #ED4264, #FFEDBC)`,
+      }}
+      onClick={() => setIsTalking(!isTalking)}
+    >
+      <header className="App-header p-4">
+        <h1 className="text-2xl text-white pacifico">Peach</h1>
       </header>
     </div>
   );
