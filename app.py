@@ -37,9 +37,6 @@ groq = Groq(
 model = "llama3-70b-8192"
 
 
-# model = "gpt-4o"
-
-
 def recording_thread():
     """ Continuously record audio while 'recording' is True. """
     global audio_queue
