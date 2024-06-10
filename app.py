@@ -238,7 +238,8 @@ def main():
     rec_thread.start()
 
     try:
-        with sd.InputStream(samplerate=porcupine.sample_rate, channels=1, dtype='float32', device=1) as stream:
+        input_device = int(os.getenv("SOUND_INPUT_DEVICE"))
+        with sd.InputStream(samplerate=porcupine.sample_rate, channels=1, dtype='float32', device=input_device) as stream:
             while True:
                 data, overflow = stream.read(porcupine.frame_length)
                 # Ensure data is clipped and scaled correctly, then convert to int16

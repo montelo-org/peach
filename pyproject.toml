@@ -2,7 +2,7 @@
 name = "peach"
 version = "0.1.0"
 description = ""
-authors = ["Sami @JUNIORCO <sami.juniorco@gmail.com>"]
+authors = ["Sami Junior <sami.juniorco@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
