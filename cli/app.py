@@ -1,10 +1,13 @@
+import asyncio
 import json
 import os
 import queue
 import threading
 import time
-from pathlib import Path
+import websockets
 
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pvporcupine
 import sounddevice as sd
@@ -22,6 +25,7 @@ channels = 1  # Mono recording
 
 # Global variables
 audio_queue = queue.Queue()  # Queue to hold audio data
+ws_clients = set()
 
 # libs
 porcupine = pvporcupine.create(
@@ -36,6 +40,22 @@ groq = Groq(
 )
 model = "llama3-70b-8192"
 
+# Websockets functions
+async def register_client(websocket):
+    ws_clients.add(websocket)
+    try:
+        async for message in websocket:
+            pass  # Handle incoming messages if needed
+    finally:
+        ws_clients.remove(websocket)
+
+async def send_to_clients(message):
+    if ws_clients:
+        await asyncio.wait([ws.send(message) for ws in ws_clients])
+
+async def websocket_server():
+    async with websockets.serve(register_client, "localhost", 6789):
+        await asyncio.Future()  # Run forever
 
 def recording_thread():
     """ Continuously record audio while 'recording' is True. """
@@ -237,13 +257,16 @@ def main():
     rec_thread = threading.Thread(target=recording_thread, daemon=True)
     rec_thread.start()
 
+    loop = asyncio.get_event_loop()
+    executor = ThreadPoolExecutor()
+
     try:
         input_device = int(os.getenv("SOUND_INPUT_DEVICE"))
         with sd.InputStream(samplerate=porcupine.sample_rate, channels=1, dtype='float32', device=input_device) as stream:
+            loop.run_in_executor(executor, websocket_server)
             while True:
                 data, overflow = stream.read(porcupine.frame_length)
-                # Ensure data is clipped and scaled correctly, then convert to int16
-                data_int16 = (np.clip(data, -1, 1) * 32767).astype(np.int16).flatten()  # Ensure it is flattened
+                data_int16 = (np.clip(data, -1, 1) * 32767).astype(np.int16).flatten()
                 keyword_index = porcupine.process(data_int16)
                 if keyword_index >= 0:
                     print("Keyword detected")
