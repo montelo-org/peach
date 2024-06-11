@@ -1,4 +1,4 @@
-.env
+cli/.env
 .idea/
 .DS_Store
 ./data
