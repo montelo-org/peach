@@ -4,14 +4,14 @@ import os
 import queue
 import threading
 import time
-import websockets
-
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
 import numpy as np
 import pvporcupine
 import sounddevice as sd
 import soundfile as sf
+import websockets
 from dotenv import load_dotenv
 from groq import Groq
 from openai import OpenAI
@@ -40,6 +40,7 @@ groq = Groq(
 )
 model = "llama3-70b-8192"
 
+
 # Websockets functions
 async def register_client(websocket):
     ws_clients.add(websocket)
@@ -49,13 +50,16 @@ async def register_client(websocket):
     finally:
         ws_clients.remove(websocket)
 
+
 async def send_to_clients(message):
     if ws_clients:
         await asyncio.wait([ws.send(message) for ws in ws_clients])
 
+
 async def websocket_server():
     async with websockets.serve(register_client, "localhost", 6789):
         await asyncio.Future()  # Run forever
+
 
 def recording_thread():
     """ Continuously record audio while 'recording' is True. """
@@ -262,7 +266,8 @@ def main():
 
     try:
         input_device = int(os.getenv("SOUND_INPUT_DEVICE"))
-        with sd.InputStream(samplerate=porcupine.sample_rate, channels=1, dtype='float32', device=input_device) as stream:
+        with sd.InputStream(samplerate=porcupine.sample_rate, channels=1, dtype='float32',
+                            device=input_device) as stream:
             loop.run_in_executor(executor, websocket_server)
             while True:
                 data, overflow = stream.read(porcupine.frame_length)
