@@ -16,6 +16,8 @@ from dotenv import load_dotenv
 from groq import Groq
 from openai import OpenAI
 from serpapi import GoogleSearch
+from pvrecorder import PvRecorder
+import pyaudio
 
 load_dotenv()
 
@@ -30,7 +32,11 @@ ws_clients = set()
 # libs
 porcupine = pvporcupine.create(
     access_key=os.getenv("PORCUPINE_API_KEY"),
-    keyword_paths=['Hey-peach_en_mac_v3_0_0.ppn']
+    keyword_paths=['Hey-peach_en_raspberry-pi_v3_0_0.ppn'],
+)
+recorder = PvRecorder(
+        frame_length=porcupine.frame_length,
+        device_index=int(os.getenv("SOUND_INPUT_DEVICE"))
 )
 openai = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
@@ -39,44 +45,33 @@ groq = Groq(
     api_key=os.getenv("GROQ_API_KEY"),
 )
 model = "llama3-70b-8192"
+messages = [
+    {
+        "role": "system",
+        "content": "You are a helpful assistant. You will be speaking back to the user via audio, so be fun and conversational. However be brief and concise and straight to the point. Answer the user's question with no extra information. User's location: Toronto, Canada. Do not ramble, just answer the user's question."
+    }
+]
+
+# tools
+def web_search(*, query, index):
+    search = GoogleSearch({
+        "q": query,
+        "location": "toronto, ontario, canada",
+        "api_key": os.getenv("SERP_API_KEY")
+    })
+    results = search.get_dict()
+    result = results[index]
+    print("web search res: ", result)
+    if index == "sports_results":
+        return json.dumps(result)
+
+    # organic
+    return "\n\n".join([r["snippet"] for r in result])
 
 
-# Websockets functions
-async def register_client(websocket):
-    ws_clients.add(websocket)
-    try:
-        async for message in websocket:
-            pass  # Handle incoming messages if needed
-    finally:
-        ws_clients.remove(websocket)
-
-
-async def send_to_clients(message):
-    if ws_clients:
-        await asyncio.wait([ws.send(message) for ws in ws_clients])
-
-
-async def websocket_server():
-    async with websockets.serve(register_client, "localhost", 6789):
-        await asyncio.Future()  # Run forever
-
-
-def recording_thread():
-    """ Continuously record audio while 'recording' is True. """
-    global audio_queue
-    recording = False
-    try:
-        while True:
-            if recording:
-                with sd.InputStream(samplerate=samplerate, channels=channels, dtype='float32', device=1) as stream:
-                    print(f"Actual Sample Rate: {stream.samplerate}")
-                    while recording:
-                        data, overflowed = stream.read(1024)
-                        audio_queue.put(data)
-            else:
-                threading.Event().wait(0.1)
-    except Exception as e:
-        print("Recording thread error:", e)
+tool_map = dict(
+    web_search=web_search
+)
 
 
 def process_and_transcribe():
@@ -97,34 +92,6 @@ def process_and_transcribe():
     else:
         print("No recording data to save.")
 
-
-messages = [
-    {
-        "role": "system",
-        "content": "You are a helpful assistant. You will be speaking back to the user via audio, so be fun and conversational. However be brief and concise and straight to the point. Answer the user's question with no extra information. User's location: Toronto, Canada. Do not ramble, just answer the user's question."
-    }
-]
-
-
-def web_search(*, query, index):
-    search = GoogleSearch({
-        "q": query,
-        "location": "toronto, ontario, canada",
-        "api_key": os.getenv("SERP_API_KEY")
-    })
-    results = search.get_dict()
-    result = results[index]
-    print("web search res: ", result)
-    if index == "sports_results":
-        return json.dumps(result)
-
-    # organic
-    return "\n\n".join([r["snippet"] for r in result])
-
-
-tool_map = dict(
-    web_search=web_search
-)
 
 
 def get_ai_response(transcription):
@@ -212,77 +179,81 @@ def play_audio(file_path):
 
 
 def convert_text_to_speech(text):
-    """ Convert the transcribed text to speech and save as an audio file. """
-    speech_file_path = Path("data", "output_speech.mp3")
+    """ Convert the transcribed text to speech and stream it directly. """
+    # Setup audio stream with pyaudio
+    p = pyaudio.PyAudio()
+    stream = p.open(format=pyaudio.paInt16,  # This format should match the PCM 16-bit format
+                    channels=1,
+                    rate=24000,  # Sample rate specified for the model
+                    output=True)
+
+    # Create and handle streaming response
     with openai.audio.speech.with_streaming_response.create(
             model="tts-1",
             voice="alloy",
-            input=text
+            input=text,
+            response_format="pcm"
     ) as response:
-        response.stream_to_file(speech_file_path)
-    print(f"Text-to-speech audio saved to {speech_file_path}")
-    play_audio(speech_file_path)
+        for chunk in response.iter_bytes(1024):  # Stream audio in chunks
+            stream.write(chunk)
+
+    # Clean up
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
+    print("Streaming complete.")
 
 
-def listen_and_record(stream, duration=20):
-    """ Record from the stream until silence is detected or the duration is exceeded. """
+def listen_and_record(recorder, duration=5, samplerate=16000):
     print("Start speaking...")
-    start_time = time.time()  # Use time module to track the start time
+    start_time = time.time()
     recorded_data = []
-    last_sound_time = time.time()  # Initialize last sound time
 
-    # Silence settings
-    silence_threshold = 2.5  # Adjust this based on your mic sensitivity or environment
-    silence_duration = 1  # Amount of continuous silence time in seconds required to stop recording
+    silence_threshold = 250  # Adjust threshold to a realistic level for int16 data
+    silence_duration = 1
+    last_sound_time = time.time()
 
     while True:
-        data, overflow = stream.read(1024)
-        volume = np.linalg.norm(data) * 10
-        recorded_data.append(data)
-        print("volume: ", volume)
+        frames = recorder.read()
+        if not frames:
+            continue
+
+        pcm_array = np.array(frames, dtype=np.int16)
+        volume = np.sqrt(np.mean(np.square(pcm_array.astype(np.float32))))
+        print(f"Volume: {volume:.2f}")
 
         if volume > silence_threshold:
-            last_sound_time = time.time()  # Update the last time sound was detected
+            last_sound_time = time.time()
+            recorded_data.append(pcm_array)
 
         current_time = time.time()
-        if current_time - last_sound_time >= silence_duration:
-            print("Silence detected, stopping recording.")
-            break  # Stop recording after silence
-
-        if current_time - start_time > duration:
-            print("Maximum duration reached, stopping recording.")
-            break  # Safety break to avoid too long recording
+        if (current_time - last_sound_time >= silence_duration) or (current_time - start_time > duration):
+            break
 
     return np.concatenate(recorded_data, axis=0)
 
 
 def main():
-    print("Listening for keywords...")
-    rec_thread = threading.Thread(target=recording_thread, daemon=True)
-    rec_thread.start()
+    print("[main] Starting...")
 
-    loop = asyncio.get_event_loop()
-    executor = ThreadPoolExecutor()
-
+    recorder.start()
     try:
-        input_device = int(os.getenv("SOUND_INPUT_DEVICE"))
-        with sd.InputStream(samplerate=porcupine.sample_rate, channels=1, dtype='float32',
-                            device=input_device) as stream:
-            loop.run_in_executor(executor, websocket_server)
-            while True:
-                data, overflow = stream.read(porcupine.frame_length)
-                data_int16 = (np.clip(data, -1, 1) * 32767).astype(np.int16).flatten()
-                keyword_index = porcupine.process(data_int16)
-                if keyword_index >= 0:
-                    print("Keyword detected")
-                    audio_data = listen_and_record(stream)
-                    audio_queue.put(audio_data)
-                    print("Processing speech...")
-                    process_and_transcribe()
+        while True:
+            pcm = recorder.read()
+            result = porcupine.process(pcm)
+
+            if result >= 0:
+                print("Keyword detected")
+                audio_data = listen_and_record(recorder)
+                audio_queue.put(audio_data)
+                print("Processing speech...")
+                process_and_transcribe()
     except KeyboardInterrupt:
         print("Exiting...")
     finally:
         print("Shutting down audio processing...")
+        porcupine.delete()
+        recorder.delete()
 
 
 if __name__ == "__main__":
