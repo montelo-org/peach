@@ -1,23 +1,18 @@
-import asyncio
 import json
 import os
 import queue
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import numpy as np
 import pvporcupine
+import pyaudio
 import sounddevice as sd
 import soundfile as sf
-import websockets
 from dotenv import load_dotenv
 from groq import Groq
 from openai import OpenAI
-from serpapi import GoogleSearch
 from pvrecorder import PvRecorder
-import pyaudio
+from serpapi import GoogleSearch
 
 load_dotenv()
 
@@ -32,11 +27,11 @@ ws_clients = set()
 # libs
 porcupine = pvporcupine.create(
     access_key=os.getenv("PORCUPINE_API_KEY"),
-    keyword_paths=['Hey-peach_en_raspberry-pi_v3_0_0.ppn'],
+    keyword_paths=[os.getenv("KEYWORD_PATH")],
 )
 recorder = PvRecorder(
-        frame_length=porcupine.frame_length,
-        device_index=int(os.getenv("SOUND_INPUT_DEVICE"))
+    frame_length=porcupine.frame_length,
+    device_index=int(os.getenv("SOUND_INPUT_DEVICE"))
 )
 openai = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
@@ -44,6 +39,8 @@ openai = OpenAI(
 groq = Groq(
     api_key=os.getenv("GROQ_API_KEY"),
 )
+
+# constants
 model = "llama3-70b-8192"
 messages = [
     {
@@ -51,6 +48,7 @@ messages = [
         "content": "You are a helpful assistant. You will be speaking back to the user via audio, so be fun and conversational. However be brief and concise and straight to the point. Answer the user's question with no extra information. User's location: Toronto, Canada. Do not ramble, just answer the user's question."
     }
 ]
+
 
 # tools
 def web_search(*, query, index):
@@ -91,7 +89,6 @@ def process_and_transcribe():
         convert_text_to_speech(ai_response)
     else:
         print("No recording data to save.")
-
 
 
 def get_ai_response(transcription):
@@ -204,7 +201,7 @@ def convert_text_to_speech(text):
     print("Streaming complete.")
 
 
-def listen_and_record(recorder, duration=5, samplerate=16000):
+def listen_and_record(recorder, duration=20):
     print("Start speaking...")
     start_time = time.time()
     recorded_data = []
