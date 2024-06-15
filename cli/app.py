@@ -45,7 +45,16 @@ model = "llama3-70b-8192"
 messages = [
     {
         "role": "system",
-        "content": "You are a helpful assistant. You will be speaking back to the user via audio, so be fun and conversational. However be brief and concise and straight to the point. Answer the user's question with no extra information. User's location: Toronto, Canada. Do not ramble, just answer the user's question."
+        "content": """You are Peach, a helpful home assistant. 
+
+Instructions:
+You will be speaking back to the user via audio, so be conversational and imagine the words you choose to say as being spoken back to the user. 
+Be brief and concise and straight to the point. 
+Answer the user's question without adding additional phrases or unimportant information.
+Simply respond with the answer to the user's request.
+
+Important: DO NOT ADD UNNECCESSARY PHRASES, like "Here are some..."
+"""
     }
 ]
 
@@ -58,8 +67,11 @@ def web_search(*, query, index):
         "api_key": os.getenv("SERP_API_KEY")
     })
     results = search.get_dict()
-    result = results[index]
-    print("web search res: ", result)
+    result = results.get(index, None)
+
+    if result is None:
+        return results
+
     if index == "sports_results":
         return json.dumps(result)
 
@@ -206,7 +218,7 @@ def listen_and_record(recorder, duration=20):
     start_time = time.time()
     recorded_data = []
 
-    silence_threshold = 250  # Adjust threshold to a realistic level for int16 data
+    silence_threshold = 800  # Adjust threshold to a realistic level for int16 data
     silence_duration = 1
     last_sound_time = time.time()
 
