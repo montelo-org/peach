@@ -13,11 +13,12 @@ from groq import Groq
 from openai import OpenAI
 from pvrecorder import PvRecorder
 from serpapi import GoogleSearch
+from whisper_cpp_python import Whisper
 
 load_dotenv()
 
 # Audio recording settings
-samplerate = 24000  # Sample rate in Hz
+samplerate = 16000  # Sample rate in Hz
 channels = 1  # Mono recording
 
 # Global variables
@@ -39,6 +40,7 @@ openai = OpenAI(
 groq = Groq(
     api_key=os.getenv("GROQ_API_KEY"),
 )
+whisper = Whisper(model_path="../../whisper.cpp/models/ggml-tiny.en.bin")
 
 # constants
 model = "llama3-70b-8192"
@@ -92,9 +94,10 @@ def process_and_transcribe():
         all_data.append(audio_queue.get())
     if all_data:
         audio_array = np.concatenate(all_data, axis=0)
-        sf.write("data/temp_audio.wav", audio_array, samplerate)
+        file_path = "data/temp_audio.wav"
+        sf.write(file_path, audio_array, samplerate, format='wav')
         print("Audio file saved. Transcribing now...")
-        transcription = transcribe_audio("data/temp_audio.wav")
+        transcription = transcribe_audio(file_path)
         print("Transcription: ", transcription)
         ai_response = get_ai_response(transcription)
         print("Response: ", ai_response)
@@ -169,13 +172,16 @@ def get_ai_response(transcription):
 
 def transcribe_audio(file_path):
     """ Transcribe the given audio file using OpenAI's Whisper model. """
-    with open(file_path, "rb") as audio_file:
-        transcription = openai.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            response_format="text"
-        )
-        return transcription
+    output = whisper.transcribe(open(file_path, mode="rb"))
+    print(output)
+    return output["text"]
+    # with open(file_path, "rb") as audio_file:
+    #     transcription = openai.audio.transcriptions.create(
+    #         model="whisper-1",
+    #         file=audio_file,
+    #         response_format="text"
+    #     )
+    #     return transcription
 
 
 def play_audio(file_path):
