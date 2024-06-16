@@ -258,9 +258,6 @@ def listen_and_record(recorder, duration=30, silence_count_limit=40):
     return np.concatenate(recorded_data, axis=0) if recorded_data else np.array([])
 
 
-
-
-
 def main():
     print("[main] Starting...")
 
