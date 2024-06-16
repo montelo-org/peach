@@ -35,7 +35,7 @@ function App() {
         </video>
       </div>
       <div className={"text-container"}>
-        <h1 className={"text-title"}>Peach Pod</h1>
+        <h1 className={"text-title"}>🍑 Peach Pod</h1>
         <p className={"text-subtitle"}>A new type of home device.<br/>Get on the waitlist for early access.</p>
         <form className={"email-container"} onSubmit={handleSubmit}>
           <input
