@@ -228,6 +228,24 @@ files = [
 ]
 
 [[package]]
+name = "elevenlabs"
+version = "1.3.0"
+description = ""
+optional = false
+python-versions = "<4.0,>=3.8"
+files = [
+    {file = "elevenlabs-1.3.0-py3-none-any.whl", hash = "sha256:a4191799f83641be39c845a413381cc8881225eb53c290f1f8821d1648e0688e"},
+    {file = "elevenlabs-1.3.0.tar.gz", hash = "sha256:5bb1b21497f60785a8b7b36fac165e7610ef249356947dd4272714825a6c26d4"},
+]
+
+[package.dependencies]
+httpx = ">=0.21.2"
+pydantic = ">=1.9.2"
+requests = ">=2.20"
+typing_extensions = ">=4.0.0"
+websockets = ">=11.0"
+
+[[package]]
 name = "google-search-results"
 version = "2.4.2"
 description = "Scrape and search localized results from Google, Bing, Baidu, Yahoo, Yandex, Ebay, Homedepot, youtube at scale using SerpApi.com"
@@ -799,4 +817,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "9e8c2be5f4b3a606d674b7572e54b958ed56bd51614fc4b05f3786352fb9b3c4"
+content-hash = "348aeb40b4ec922849db14633123efb6e98a3ac213e05b4ae744e9cf804ee147"

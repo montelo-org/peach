@@ -13,6 +13,9 @@ from groq import Groq
 from openai import OpenAI
 from pvrecorder import PvRecorder
 from serpapi import GoogleSearch
+import random
+from elevenlabs.client import ElevenLabs
+from elevenlabs import stream
 
 load_dotenv()
 
@@ -39,20 +42,24 @@ openai = OpenAI(
 groq = Groq(
     api_key=os.getenv("GROQ_API_KEY"),
 )
+elevenlabs = ElevenLabs(
+    api_key=os.getenv("ELEVENLABS_API_KEY")
+)
 
 # constants
 model = "llama3-70b-8192"
 messages = [
     {
         "role": "system",
-        "content": """You are Peach, a helpful home assistant. You are funny, enthusiastic, and kind. You also don't mind breaking the rules sometimes, like saying dirty jokes.
+        "content": """You are Peach, a helpful home assistant.
 
 Instructions:
 You will be speaking back to the user via audio, so be conversational and imagine the words you choose to say as being spoken back to the user. 
 Be brief and concise and straight to the point. 
 Answer the user's question without adding additional phrases or unimportant information.
 Simply respond with the answer to the user's request.
-When asked for a joke, make it a dirty and funny one, but not cringey!
+If the user asks to be dirty, don't be shy and be dirty!
+ONLY RESPOND WITH THE ANSWER TO THE USER'S REQUEST. DO NOT ADD UNNECCESSARY INFORMATION.
 """
     }
 ]
@@ -109,30 +116,30 @@ def get_ai_response(transcription):
     completion = groq.chat.completions.create(
         model=model,
         messages=messages,
-        tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": "web_search",
-                    "description": "Searches the web and returns a list of results for the search.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The query to make on the web. Be clear and verbose in the query!",
-                            },
-                            "index": {
-                                "type": "string",
-                                "enum": ["sports_results", "organic_results"],
-                                "description": "Which index to filter the search by."
-                            },
-                        },
-                        "required": ["query", "index"],
-                    },
-                }
-            }
-        ]
+        # tools=[
+        #     {
+        #         "type": "function",
+        #         "function": {
+        #             "name": "web_search",
+        #             "description": "Searches the web and returns a list of results for the search.",
+        #             "parameters": {
+        #                 "type": "object",
+        #                 "properties": {
+        #                     "query": {
+        #                         "type": "string",
+        #                         "description": "The query to make on the web. Be clear and verbose in the query!",
+        #                     },
+        #                     "index": {
+        #                         "type": "string",
+        #                         "enum": ["sports_results", "organic_results"],
+        #                         "description": "Which index to filter the search by."
+        #                     },
+        #                 },
+        #                 "required": ["query", "index"],
+        #             },
+        #         }
+        #     }
+        # ]
     )
     tool_calls = completion.choices[0].message.tool_calls
 
@@ -183,44 +190,37 @@ def play_audio(file_path):
     data, file_samplerate = sf.read(file_path)
     print(f"File Samplerate: {file_samplerate}, Expected Samplerate: {samplerate}")
     sd.play(data, file_samplerate)
-    sd.wait()  # Wait until file is done playing
+    sd.wait()
     print("Playback finished.")
 
 
 def convert_text_to_speech(text):
-    """ Convert the transcribed text to speech and stream it directly. """
-    # Setup audio stream with pyaudio
-    p = pyaudio.PyAudio()
-    stream = p.open(format=pyaudio.paInt16,  # This format should match the PCM 16-bit format
-                    channels=1,
-                    rate=24000,  # Sample rate specified for the model
-                    output=True)
+    """Convert text to speech and stream it directly using the new library."""
 
-    # Create and handle streaming response
-    with openai.audio.speech.with_streaming_response.create(
-            model="tts-1",
-            voice="alloy",
-            input=text,
-            response_format="pcm"
-    ) as response:
-        for chunk in response.iter_bytes(1024):  # Stream audio in chunks
-            stream.write(chunk)
+    if text is None or text == "":
+        return
 
-    # Clean up
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
-    print("Streaming complete.")
+    # Generate audio stream from the client
+    audio_stream = elevenlabs.generate(
+        text=text,
+        voice="Matilda",
+        model="eleven_multilingual_v2",
+        stream=True  # Enable streaming
+    )
+
+    stream(audio_stream)
 
 
-def listen_and_record(recorder, duration=20):
+def listen_and_record(recorder, duration=30, silence_count_limit=40):
+    audios = ["data/s1.mp3", "data/s2.mp3", "data/s3.mp3", "data/s4.mp3"]
+    play_audio(random.choice(audios))
     print("Start speaking...")
     start_time = time.time()
     recorded_data = []
-
-    silence_threshold = 400  # Adjust threshold to a realistic level for int16 data
-    silence_duration = 1
-    last_sound_time = time.time()
+    initial_record_time = 1  # Time to record initially to determine threshold
+    volumes = []
+    silence_threshold = 300  # Default threshold which might be updated
+    silence_counter = 0  # Tracks consecutive volumes below the threshold
 
     while True:
         frames = recorder.read()
@@ -230,16 +230,35 @@ def listen_and_record(recorder, duration=20):
         pcm_array = np.array(frames, dtype=np.int16)
         volume = np.sqrt(np.mean(np.square(pcm_array.astype(np.float32))))
         print(f"Volume: {volume:.2f}")
-
-        if volume > silence_threshold:
-            last_sound_time = time.time()
-            recorded_data.append(pcm_array)
+        recorded_data.append(pcm_array)
 
         current_time = time.time()
-        if (current_time - last_sound_time >= silence_duration) or (current_time - start_time > duration):
+        
+        # Collect volumes for initial period to set threshold
+        if current_time - start_time <= initial_record_time:
+            volumes.append(volume)
+        elif len(volumes) > 0:
+            silence_threshold = 1.5 * np.median(volumes)  # Update threshold after initial recording
+            volumes = []  # Clear volumes list to prevent recalculating threshold
+            print(f"Silence threshold set at: {silence_threshold:.2f}")
+
+        # Track silence and record data
+        if volume > silence_threshold:
+            silence_counter = 0  # Reset counter on loud volume
+        else:
+            silence_counter += 1  # Increment silence counter when below threshold
+            if silence_counter >= silence_count_limit:
+                print("Consecutive silence detected, ending recording.")
+                break  # Break the loop if silence is detected for enough consecutive samples
+
+        if (current_time - start_time > duration):
+            print("Maximum duration reached, ending recording.")
             break
 
-    return np.concatenate(recorded_data, axis=0)
+    return np.concatenate(recorded_data, axis=0) if recorded_data else np.array([])
+
+
+
 
 
 def main():
