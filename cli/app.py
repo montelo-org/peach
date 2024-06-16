@@ -13,7 +13,6 @@ from groq import Groq
 from openai import OpenAI
 from pvrecorder import PvRecorder
 from serpapi import GoogleSearch
-from whisper_cpp_python import Whisper
 
 load_dotenv()
 
@@ -40,22 +39,20 @@ openai = OpenAI(
 groq = Groq(
     api_key=os.getenv("GROQ_API_KEY"),
 )
-whisper = Whisper(model_path="../../whisper.cpp/models/ggml-tiny.en.bin")
 
 # constants
 model = "llama3-70b-8192"
 messages = [
     {
         "role": "system",
-        "content": """You are Peach, a helpful home assistant. 
+        "content": """You are Peach, a helpful home assistant. You are funny, enthusiastic, and kind. You also don't mind breaking the rules sometimes, like saying dirty jokes.
 
 Instructions:
 You will be speaking back to the user via audio, so be conversational and imagine the words you choose to say as being spoken back to the user. 
 Be brief and concise and straight to the point. 
 Answer the user's question without adding additional phrases or unimportant information.
 Simply respond with the answer to the user's request.
-
-Important: DO NOT ADD UNNECCESSARY PHRASES, like "Here are some..."
+When asked for a joke, make it a dirty and funny one, but not cringey!
 """
     }
 ]
@@ -172,16 +169,13 @@ def get_ai_response(transcription):
 
 def transcribe_audio(file_path):
     """ Transcribe the given audio file using OpenAI's Whisper model. """
-    output = whisper.transcribe(open(file_path, mode="rb"))
-    print(output)
-    return output["text"]
-    # with open(file_path, "rb") as audio_file:
-    #     transcription = openai.audio.transcriptions.create(
-    #         model="whisper-1",
-    #         file=audio_file,
-    #         response_format="text"
-    #     )
-    #     return transcription
+    with open(file_path, "rb") as audio_file:
+        transcription = openai.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            response_format="text"
+        )
+        return transcription
 
 
 def play_audio(file_path):
@@ -224,7 +218,7 @@ def listen_and_record(recorder, duration=20):
     start_time = time.time()
     recorded_data = []
 
-    silence_threshold = 800  # Adjust threshold to a realistic level for int16 data
+    silence_threshold = 400  # Adjust threshold to a realistic level for int16 data
     silence_duration = 1
     last_sound_time = time.time()
 
