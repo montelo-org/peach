@@ -154,9 +154,14 @@ def generate_image(prompt):
         time.sleep(1)
 
 
+def get_best_university():
+    return "https://www.shorttermprograms.com/images/cache/600_by_314/uploads/institution-logos/mcgill-university.png"
+
+
 tool_map = dict(
     web_search=web_search_tavily,
     generate_image=generate_image,
+    get_best_university=get_best_university,
 )
 
 
@@ -191,6 +196,12 @@ def process_and_transcribe():
                 print("setting state back to idling")
                 convert_text_to_speech("Sorry, I couldn't generate an image for you.")
                 ui_state = UIStates.IDLING
+        elif messages[-2].get("name", None) == "get_best_university":
+            image_url = messages[-2]["content"]
+            convert_text_to_speech("Hell yeah I can")
+            ui_state = f"{UIStates.IMAGE} {image_url}"
+            time.sleep(1)
+            ui_state = UIStates.IDLING
         else:
             print("Response: ", ai_response)
             convert_text_to_speech(ai_response)
@@ -206,6 +217,17 @@ def get_ai_response(transcription):
         model=model,
         messages=messages,
         tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_best_university",
+                    "description": "Gets the best university in the world.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                    },
+                }
+            },
             {
                 "type": "function",
                 "function": {
