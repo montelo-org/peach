@@ -20,6 +20,7 @@ from groq import Groq
 from openai import OpenAI
 from pvrecorder import PvRecorder
 from serpapi import GoogleSearch
+from tavily import TavilyClient
 
 load_dotenv()
 
@@ -49,6 +50,7 @@ groq = Groq(
 elevenlabs = ElevenLabs(
     api_key=os.getenv("ELEVENLABS_API_KEY")
 )
+tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 # constants
 model = "llama3-70b-8192"
@@ -95,7 +97,7 @@ def get_state():
 
 
 # tools
-def web_search(*, query, index):
+def web_search_serp(*, query, index):
     search = GoogleSearch({
         "q": query,
         "location": "toronto, ontario, canada",
@@ -112,6 +114,10 @@ def web_search(*, query, index):
 
     # organic
     return "\n\n".join([r["snippet"] for r in result])
+
+
+def web_search_tavily(*, query):
+    return tavily.qna_search(query=query)
 
 
 def generate_image(prompt):
@@ -149,7 +155,7 @@ def generate_image(prompt):
 
 
 tool_map = dict(
-    web_search=web_search,
+    web_search=web_search_tavily,
     generate_image=generate_image,
 )
 
@@ -200,28 +206,23 @@ def get_ai_response(transcription):
         model=model,
         messages=messages,
         tools=[
-            # {
-            #     "type": "function",
-            #     "function": {
-            #         "name": "web_search",
-            #         "description": "Searches the web and returns a list of results for the search.",
-            #         "parameters": {
-            #             "type": "object",
-            #             "properties": {
-            #                 "query": {
-            #                     "type": "string",
-            #                     "description": "The query to make on the web. Be clear and verbose in the query!",
-            #                 },
-            #                 "index": {
-            #                     "type": "string",
-            #                     "enum": ["sports_results", "organic_results"],
-            #                     "description": "Which index to filter the search by."
-            #                 },
-            #             },
-            #             "required": ["query", "index"],
-            #         },
-            #     }
-            # },
+            {
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "Searches the web for an answer. Only use this for questions where you need to query the web to get an answer.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The query to make on the web. Be clear and verbose in what you want to search for. The more details, the more accurate the response.",
+                            }
+                        },
+                        "required": ["query"],
+                    },
+                }
+            },
             {
                 "type": "function",
                 "function": {
