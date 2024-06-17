@@ -28,12 +28,12 @@ function App() {
   
   return (
     <div className={"container"}>
-      <div className={"video-placeholder"}>
-        <video controls autoPlay muted>
-          <source src={"/vid.mp4"} type="video/mp4"/>
-          Your browser does not support the video tag.
-        </video>
-      </div>
+      {/*<div className={"video-placeholder"}>*/}
+      {/*  <video controls autoPlay muted>*/}
+      {/*    <source src={"/vid.mp4"} type="video/mp4"/>*/}
+      {/*    Your browser does not support the video tag.*/}
+      {/*  </video>*/}
+      {/*</div>*/}
       <div className={"text-container"}>
         <h1 className={"text-title"}>🍑 Peach Pod</h1>
         <p className={"text-subtitle"}>A new type of home device.<br/>Get on the waitlist for early access.</p>
