@@ -36,7 +36,7 @@ function App() {
       {/*</div>*/}
       <div className={"text-container"}>
         <h1 className={"text-title"}>🍑 Peach Pod</h1>
-        <p className={"text-subtitle"}>A new type of home device.<br/>Get on the waitlist for early access.</p>
+        <p className={"text-subtitle"}>A new type of home entertainment device.<br/>Get on the waitlist for early access.</p>
         <form className={"email-container"} onSubmit={handleSubmit}>
           <input
             className={"email-input"}
