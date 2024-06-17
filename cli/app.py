@@ -8,13 +8,14 @@ from threading import Thread
 
 import numpy as np
 import pvporcupine
+import requests
 import sounddevice as sd
 import soundfile as sf
 from dotenv import load_dotenv
 from elevenlabs import stream
 from elevenlabs.client import ElevenLabs
 from flask import Flask
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from groq import Groq
 from openai import OpenAI
 from pvrecorder import PvRecorder
@@ -74,6 +75,7 @@ class UIStates:
     RECORDING = "recording"
     PROCESSING = "processing"
     PLAYBACK = "playback"
+    IMAGE = "image"
 
 
 ui_state = UIStates.IDLING
@@ -87,6 +89,7 @@ logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
 
 @app.route("/")
+@cross_origin(origin='*')
 def get_state():
     return ui_state
 
@@ -111,8 +114,43 @@ def web_search(*, query, index):
     return "\n\n".join([r["snippet"] for r in result])
 
 
+def generate_image(prompt):
+    prodia_key = "72a1b2b6-281a-4211-a658-e7c17780c2d2"
+    response = requests.post("https://api.prodia.com/v1/sdxl/generate", json={"prompt": prompt}, headers={
+        "accept": "application/json",
+        "content-type": "application/json",
+        "X-Prodia-Key": prodia_key,
+    })
+    data = response.json()
+    print("data: ", data)
+    job = data["job"]
+
+    if not job:
+        return "Image could not be generated"
+
+    num_tries = 0
+
+    while True:
+        if num_tries >= 30:
+            return "Image could not be generated"
+        response = requests.get(f"https://api.prodia.com/v1/job/{job}", headers={
+            "accept": "application/json",
+            "X-Prodia-Key": prodia_key
+        })
+        data = response.json()
+        print("job: ", data)
+        status = data["status"]
+
+        if status == "succeeded":
+            return data["imageUrl"]
+
+        num_tries += 1
+        time.sleep(1)
+
+
 tool_map = dict(
-    web_search=web_search
+    web_search=web_search,
+    generate_image=generate_image,
 )
 
 
@@ -133,9 +171,24 @@ def process_and_transcribe():
         transcription = transcribe_audio(file_path)
         print("Transcription: ", transcription)
         ai_response = get_ai_response(transcription)
-        print("Response: ", ai_response)
-        convert_text_to_speech(ai_response)
-        ui_state = UIStates.IDLING
+
+        if messages[-2].get("name", None) == "generate_image":
+            image_url = messages[-2]["content"]
+            print("image url: ", image_url)
+            if image_url.startswith("http"):
+                print("setting ui state to image")
+                convert_text_to_speech("Here's your image!")
+                ui_state = f"{UIStates.IMAGE} {image_url}"
+                time.sleep(1)
+                ui_state = UIStates.IDLING
+            else:
+                print("setting state back to idling")
+                convert_text_to_speech("Sorry, I couldn't generate an image for you.")
+                ui_state = UIStates.IDLING
+        else:
+            print("Response: ", ai_response)
+            convert_text_to_speech(ai_response)
+            ui_state = UIStates.IDLING
     else:
         print("No recording data to save.")
 
@@ -146,30 +199,47 @@ def get_ai_response(transcription):
     completion = groq.chat.completions.create(
         model=model,
         messages=messages,
-        # tools=[
-        #     {
-        #         "type": "function",
-        #         "function": {
-        #             "name": "web_search",
-        #             "description": "Searches the web and returns a list of results for the search.",
-        #             "parameters": {
-        #                 "type": "object",
-        #                 "properties": {
-        #                     "query": {
-        #                         "type": "string",
-        #                         "description": "The query to make on the web. Be clear and verbose in the query!",
-        #                     },
-        #                     "index": {
-        #                         "type": "string",
-        #                         "enum": ["sports_results", "organic_results"],
-        #                         "description": "Which index to filter the search by."
-        #                     },
-        #                 },
-        #                 "required": ["query", "index"],
-        #             },
-        #         }
-        #     }
-        # ]
+        tools=[
+            # {
+            #     "type": "function",
+            #     "function": {
+            #         "name": "web_search",
+            #         "description": "Searches the web and returns a list of results for the search.",
+            #         "parameters": {
+            #             "type": "object",
+            #             "properties": {
+            #                 "query": {
+            #                     "type": "string",
+            #                     "description": "The query to make on the web. Be clear and verbose in the query!",
+            #                 },
+            #                 "index": {
+            #                     "type": "string",
+            #                     "enum": ["sports_results", "organic_results"],
+            #                     "description": "Which index to filter the search by."
+            #                 },
+            #             },
+            #             "required": ["query", "index"],
+            #         },
+            #     }
+            # },
+            {
+                "type": "function",
+                "function": {
+                    "name": "generate_image",
+                    "description": "Use this function to generate an image if the user requests to create an image.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {
+                                "type": "string",
+                                "description": "The prompt to generate the image. Take the user's prompt and expand on it. Try to formulate 2-3 sentences for best results. Don't say 'generate an image...', just describe the image you'd like to generate. you can be detailed! ",
+                            }
+                        },
+                        "required": ["prompt"],
+                    },
+                }
+            }
+        ]
     )
     tool_calls = completion.choices[0].message.tool_calls
 
