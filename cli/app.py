@@ -1,21 +1,24 @@
 import json
+import logging
 import os
 import queue
+import random
 import time
+from threading import Thread
 
 import numpy as np
 import pvporcupine
-import pyaudio
 import sounddevice as sd
 import soundfile as sf
 from dotenv import load_dotenv
+from elevenlabs import stream
+from elevenlabs.client import ElevenLabs
+from flask import Flask
+from flask_cors import CORS
 from groq import Groq
 from openai import OpenAI
 from pvrecorder import PvRecorder
 from serpapi import GoogleSearch
-import random
-from elevenlabs.client import ElevenLabs
-from elevenlabs import stream
 
 load_dotenv()
 
@@ -65,6 +68,29 @@ ONLY RESPOND WITH THE ANSWER TO THE USER'S REQUEST. DO NOT ADD UNNECCESSARY INFO
 ]
 
 
+# ui
+class UIStates:
+    IDLING = "idling"
+    RECORDING = "recording"
+    PROCESSING = "processing"
+    PLAYBACK = "playback"
+
+
+ui_state = UIStates.IDLING
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}}, methods=['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'], allow_headers=[
+    "Content-Type", "Authorization", "X-Requested-With", "Access-Control-Allow-Credentials",
+    "Access-Control-Allow-Origin"])
+app.logger.setLevel(logging.WARNING)
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
+
+@app.route("/")
+def get_state():
+    return ui_state
+
+
 # tools
 def web_search(*, query, index):
     search = GoogleSearch({
@@ -92,7 +118,10 @@ tool_map = dict(
 
 def process_and_transcribe():
     """ Process, transcribe, and convert text to speech for audio data directly from the queue. """
+    global ui_state
     global messages
+
+    ui_state = UIStates.PROCESSING
     all_data = []
     while not audio_queue.empty():
         all_data.append(audio_queue.get())
@@ -106,6 +135,7 @@ def process_and_transcribe():
         ai_response = get_ai_response(transcription)
         print("Response: ", ai_response)
         convert_text_to_speech(ai_response)
+        ui_state = UIStates.IDLING
     else:
         print("No recording data to save.")
 
@@ -200,6 +230,8 @@ def convert_text_to_speech(text):
     if text is None or text == "":
         return
 
+    global ui_state
+    ui_state = UIStates.PLAYBACK
     # Generate audio stream from the client
     audio_stream = elevenlabs.generate(
         text=text,
@@ -214,7 +246,10 @@ def convert_text_to_speech(text):
 def listen_and_record(recorder, duration=30, silence_count_limit=40):
     audios = ["data/s1.mp3", "data/s2.mp3", "data/s3.mp3", "data/s4.mp3"]
     play_audio(random.choice(audios))
+
     print("Start speaking...")
+    global ui_state
+    ui_state = UIStates.RECORDING
     start_time = time.time()
     recorded_data = []
     initial_record_time = 1  # Time to record initially to determine threshold
@@ -232,10 +267,10 @@ def listen_and_record(recorder, duration=30, silence_count_limit=40):
         print(f"Volume: {volume:.2f}")
         recorded_data.append(pcm_array)
 
-        current_time = time.time()
-        
+        current_time = time.time() - start_time
+
         # Collect volumes for initial period to set threshold
-        if current_time - start_time <= initial_record_time:
+        if current_time <= initial_record_time:
             volumes.append(volume)
         elif len(volumes) > 0:
             silence_threshold = 1.5 * np.median(volumes)  # Update threshold after initial recording
@@ -251,7 +286,7 @@ def listen_and_record(recorder, duration=30, silence_count_limit=40):
                 print("Consecutive silence detected, ending recording.")
                 break  # Break the loop if silence is detected for enough consecutive samples
 
-        if (current_time - start_time > duration):
+        if current_time > duration:
             print("Maximum duration reached, ending recording.")
             break
 
@@ -262,6 +297,8 @@ def main():
     print("[main] Starting...")
 
     recorder.start()
+    global ui_state
+    ui_state = UIStates.IDLING
     try:
         while True:
             pcm = recorder.read()
@@ -282,4 +319,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main_thread = Thread(target=main)
+    main_thread.start()
+    app.run(use_reloader=False)
