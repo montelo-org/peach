@@ -39,17 +39,13 @@ porcupine = pvporcupine.create(
 )
 recorder = PvRecorder(
     frame_length=porcupine.frame_length,
-    device_index=int(os.getenv("SOUND_INPUT_DEVICE"))
+    device_index=int(os.getenv("SOUND_INPUT_DEVICE")),
 )
-openai = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
+openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 groq = Groq(
     api_key=os.getenv("GROQ_API_KEY"),
 )
-elevenlabs = ElevenLabs(
-    api_key=os.getenv("ELEVENLABS_API_KEY")
-)
+elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 # constants
@@ -66,7 +62,27 @@ Answer the user's question without adding additional phrases or unimportant info
 Simply respond with the answer to the user's request.
 If the user asks to be dirty, don't be shy and be dirty!
 ONLY RESPOND WITH THE ANSWER TO THE USER'S REQUEST. DO NOT ADD UNNECCESSARY INFORMATION.
-"""
+
+If user asks any of the following questions, then respond with the answer below it:
+
+Question: Is anyone from season 2 of Love Is Blind still together?
+Answer: As of the latest updates, both couples from "Love Is Blind" season 2 who got married—Jarette and Iyanna, and Nick and Danielle—have since divorced.
+
+Question: What did Huberman say about the importance of morning sunlight?
+Answer: Huberman emphasized the importance of morning sunlight in regulating mood, alertness, and sleep quality by setting the body's circadian rhythm, increasing morning cortisol levels, and suppressing melatonin production.
+
+Question: What was Michael Jackson's first album with Quincy Jones?
+Answer: Michael Jackson's "Off The Wall" was the first album with Quincy Jones.
+
+Question: How old was Michael when he released that album?
+Answer: Michael Jackson was 21 years old when he released Off The Wall.
+
+Question: What about Thriller?
+Answer: Michael Jackson's "Thriller" was released in 1982 so he was 24 years old at the time.
+
+Question: If we travel at the speed of light in a car, would bluetooth still work?
+Answer: If both the Bluetooth transmitter and receiver are moving at the speed of light, the signal, which also travels at the speed of light, wouldn't be able to catch up from the transmitter to the receiver, effectively making communication impossible.
+""",
     }
 ]
 
@@ -83,26 +99,37 @@ class UIStates:
 ui_state = UIStates.IDLING
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, methods=['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'], allow_headers=[
-    "Content-Type", "Authorization", "X-Requested-With", "Access-Control-Allow-Credentials",
-    "Access-Control-Allow-Origin"])
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    methods=["GET", "POST", "OPTIONS", "PUT", "DELETE"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Access-Control-Allow-Credentials",
+        "Access-Control-Allow-Origin",
+    ],
+)
 app.logger.setLevel(logging.WARNING)
-logging.getLogger('werkzeug').setLevel(logging.WARNING)
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 
 @app.route("/")
-@cross_origin(origin='*')
+@cross_origin(origin="*")
 def get_state():
     return ui_state
 
 
 # tools
 def web_search_serp(*, query, index):
-    search = GoogleSearch({
-        "q": query,
-        "location": "toronto, ontario, canada",
-        "api_key": os.getenv("SERP_API_KEY")
-    })
+    search = GoogleSearch(
+        {
+            "q": query,
+            "location": "toronto, ontario, canada",
+            "api_key": os.getenv("SERP_API_KEY"),
+        }
+    )
     results = search.get_dict()
     result = results.get(index, None)
 
@@ -122,11 +149,15 @@ def web_search_tavily(*, query):
 
 def generate_image(prompt):
     prodia_key = "72a1b2b6-281a-4211-a658-e7c17780c2d2"
-    response = requests.post("https://api.prodia.com/v1/sdxl/generate", json={"prompt": prompt}, headers={
-        "accept": "application/json",
-        "content-type": "application/json",
-        "X-Prodia-Key": prodia_key,
-    })
+    response = requests.post(
+        "https://api.prodia.com/v1/sdxl/generate",
+        json={"prompt": prompt},
+        headers={
+            "accept": "application/json",
+            "content-type": "application/json",
+            "X-Prodia-Key": prodia_key,
+        },
+    )
     data = response.json()
     print("data: ", data)
     job = data["job"]
@@ -139,10 +170,10 @@ def generate_image(prompt):
     while True:
         if num_tries >= 30:
             return "Image could not be generated"
-        response = requests.get(f"https://api.prodia.com/v1/job/{job}", headers={
-            "accept": "application/json",
-            "X-Prodia-Key": prodia_key
-        })
+        response = requests.get(
+            f"https://api.prodia.com/v1/job/{job}",
+            headers={"accept": "application/json", "X-Prodia-Key": prodia_key},
+        )
         data = response.json()
         print("job: ", data)
         status = data["status"]
@@ -166,7 +197,7 @@ tool_map = dict(
 
 
 def process_and_transcribe():
-    """ Process, transcribe, and convert text to speech for audio data directly from the queue. """
+    """Process, transcribe, and convert text to speech for audio data directly from the queue."""
     global ui_state
     global messages
 
@@ -177,7 +208,7 @@ def process_and_transcribe():
     if all_data:
         audio_array = np.concatenate(all_data, axis=0)
         file_path = "data/temp_audio.wav"
-        sf.write(file_path, audio_array, samplerate, format='wav')
+        sf.write(file_path, audio_array, samplerate, format="wav")
         print("Audio file saved. Transcribing now...")
         transcription = transcribe_audio(file_path)
         print("Transcription: ", transcription)
@@ -226,7 +257,7 @@ def get_ai_response(transcription):
                         "type": "object",
                         "properties": {},
                     },
-                }
+                },
             },
             {
                 "type": "function",
@@ -243,7 +274,7 @@ def get_ai_response(transcription):
                         },
                         "required": ["query"],
                     },
-                }
+                },
             },
             {
                 "type": "function",
@@ -260,9 +291,9 @@ def get_ai_response(transcription):
                         },
                         "required": ["prompt"],
                     },
-                }
-            }
-        ]
+                },
+            },
+        ],
     )
     tool_calls = completion.choices[0].message.tool_calls
 
@@ -273,7 +304,9 @@ def get_ai_response(transcription):
             function_name = tool_call.function.name
             function_to_call = tool_map[function_name]
             function_args = json.loads(tool_call.function.arguments)
-            print("Calling: ", function_name, " with args ", tool_call.function.arguments)
+            print(
+                "Calling: ", function_name, " with args ", tool_call.function.arguments
+            )
             function_response = function_to_call(**function_args)
             print("Function response: ", function_response)
             messages.append(
@@ -298,18 +331,16 @@ def get_ai_response(transcription):
 
 
 def transcribe_audio(file_path):
-    """ Transcribe the given audio file using OpenAI's Whisper model. """
+    """Transcribe the given audio file using OpenAI's Whisper model."""
     with open(file_path, "rb") as audio_file:
         transcription = openai.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            response_format="text"
+            model="whisper-1", file=audio_file, response_format="text"
         )
         return transcription
 
 
 def play_audio(file_path):
-    """ Play the audio file using sounddevice. """
+    """Play the audio file using sounddevice."""
     data, file_samplerate = sf.read(file_path)
     print(f"File Samplerate: {file_samplerate}, Expected Samplerate: {samplerate}")
     sd.play(data, file_samplerate)
@@ -330,7 +361,7 @@ def convert_text_to_speech(text):
         text=text,
         voice="Matilda",
         model="eleven_multilingual_v2",
-        stream=True  # Enable streaming
+        stream=True,  # Enable streaming
     )
 
     stream(audio_stream)
@@ -366,7 +397,9 @@ def listen_and_record(recorder, duration=30, silence_count_limit=40):
         if current_time <= initial_record_time:
             volumes.append(volume)
         elif len(volumes) > 0:
-            silence_threshold = 1.5 * np.median(volumes)  # Update threshold after initial recording
+            silence_threshold = 1.5 * np.median(
+                volumes
+            )  # Update threshold after initial recording
             volumes = []  # Clear volumes list to prevent recalculating threshold
             print(f"Silence threshold set at: {silence_threshold:.2f}")
 
