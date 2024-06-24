@@ -3,6 +3,8 @@ import requests
 
 
 def generate_image(prompt):
+    return "https://images.prodia.xyz/0e19834e-ed25-444d-8aa5-f3bb3e4b47ad.png"
+
     prodia_key = "72a1b2b6-281a-4211-a658-e7c17780c2d2"
     response = requests.post(
         "https://api.prodia.com/v1/sdxl/generate",
