@@ -21,14 +21,25 @@ tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 messages = [SYSTEM_MESSAGE]
 
 
+def get_user_category(messages):
+    completion = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+    )
+    return completion.choices[0].message.content
+
+
 def get_ai_response(transcription):
     global messages
     messages.append({"role": "user", "content": transcription})
 
+    # category = get_user_category(messages)
+    # print("category: ", category)
+
     try:
         # Initial completion
-        completion = groq.chat.completions.create(
-            model=MODEL,
+        completion = openai.chat.completions.create(
+            model="gpt-4o",
             messages=messages,
             tools=TOOLS_JSON,
         )
@@ -100,5 +111,8 @@ if __name__ == "__main__":
         sys.exit(1)
 
     userInput = sys.argv[1]
-    response = get_ai_response(userInput)
-    print(response)
+
+    while True:
+        response = get_ai_response(userInput)
+        print(response)
+        userInput = input("\nEnter your input: ")
