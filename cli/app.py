@@ -53,7 +53,7 @@ elevenlabs = ElevenLabs(
 tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 # constants
-model = "llama3-70b-8192"
+model = "gpt-4o"
 messages = [
     {
         "role": "system",
@@ -213,7 +213,7 @@ def process_and_transcribe():
 def get_ai_response(transcription):
     global messages
     messages.append({"role": "user", "content": transcription})
-    completion = groq.chat.completions.create(
+    completion = openai.chat.completions.create(
         model=model,
         messages=messages,
         tools=[
@@ -232,7 +232,7 @@ def get_ai_response(transcription):
                 "type": "function",
                 "function": {
                     "name": "web_search",
-                    "description": "Searches the web for an answer. Only use this for questions where you need to query the web to get an answer.",
+                    "description": "Only use this for questions where you need to query the web to get an answer. Do NOT use this unless absolutely needed. If you can answer the question without using this, then do not use this.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -285,7 +285,7 @@ def get_ai_response(transcription):
                 }
             )
         second_response = groq.chat.completions.create(
-            model=model,
+            model="llama3-70b-8192",
             messages=messages,
         )
         second_response_content = second_response.choices[0].message.content
