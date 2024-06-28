@@ -1,7 +1,9 @@
+import json
 import time
 from io import BytesIO
+from typing import List
 
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import JSONResponse
 from modal import App, Image, asgi_app, Secret, gpu
 
@@ -48,7 +50,7 @@ def health():
 
 
 @web_app.post("/upload")
-async def upload_audio(file: UploadFile):
+async def upload_audio(file: UploadFile, messages: List[str] = Form(...)):
     if not file.filename.endswith(".wav"):
         return JSONResponse(status_code=400, content={"message": "Invalid file format. Please upload a WAV file."})
 
@@ -84,8 +86,8 @@ async def upload_audio(file: UploadFile):
     def ai(transcription: str):
         start_time = time.time()
 
-        messages = []  # TODO this should be passed into the route
-        combined_messages = messages + [dict(role="user", content=transcription)]
+        json_messages = json.loads(messages[0])
+        combined_messages = json_messages + [dict(role="user", content=transcription)]
         completion = groq.chat.completions.create(
             model=ai_model,
             messages=combined_messages,

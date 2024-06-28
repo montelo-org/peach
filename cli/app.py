@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import queue
@@ -140,8 +141,13 @@ def process_and_transcribe():
 
         url = "https://montelo-org--peach-api-fastapi-app.modal.run/upload"
         with open(file_path, 'rb') as file:
-            files = {"file": file}
-            response = requests.post(url, files=files)
+            files = {
+                "file": file
+            }
+            data = {
+                "messages": json.dumps(messages)
+            }
+            response = requests.post(url, files=files, data=data)
             ai_response = response.json()
             speech(ai_response)
 
@@ -159,7 +165,7 @@ def play_audio(file_path):
     print("Playback finished.")
 
 
-def listen_and_record(recorder, duration=30, silence_count_limit=40):
+def listen_and_record(recorder, duration=30, silence_count_limit=30):
     audios = ["data/s1.mp3", "data/s2.mp3", "data/s3.mp3", "data/s4.mp3"]
     play_audio(random.choice(audios))
 
