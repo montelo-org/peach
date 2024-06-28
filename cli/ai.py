@@ -6,8 +6,10 @@ from dotenv import load_dotenv
 from groq import Groq
 from openai import OpenAI
 from tavily import TavilyClient
+
 from constants.model_config import MODEL, SYSTEM_MESSAGE, TOOL_MAP
 from constants.tools_json import TOOLS_JSON
+from utils import log_function_time
 
 load_dotenv()
 
@@ -16,7 +18,6 @@ groq = Groq(
     api_key=os.getenv("GROQ_API_KEY"),
 )
 tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-
 
 messages = [SYSTEM_MESSAGE]
 
@@ -29,6 +30,7 @@ def get_user_category(messages):
     return completion.choices[0].message.content
 
 
+@log_function_time
 def get_ai_response(transcription):
     global messages
     messages.append({"role": "user", "content": transcription})
