@@ -138,7 +138,7 @@ def process_and_transcribe():
         sf.write(file_path, audio_array, samplerate, format="wav")
         print("Audio file saved. Transcribing now...")
 
-        url = "https://montelo-org--peach-api-fastapi-app-dev.modal.run/upload"
+        url = "https://montelo-org--peach-api-fastapi-app.modal.run/upload"
         with open(file_path, 'rb') as file:
             files = {"file": file}
             response = requests.post(url, files=files)
