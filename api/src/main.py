@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import time
@@ -7,11 +8,11 @@ from typing import List
 from fastapi import FastAPI, UploadFile, Form, Response
 from fastapi.responses import JSONResponse
 from modal import App, Image, asgi_app, Secret, gpu
-from starlette.websockets import WebSocket
+from starlette.websockets import WebSocket, WebSocketState, WebSocketDisconnect
 
 web_app = FastAPI()
 app = App("peach-api")
-whisper_model = "base.en"
+whisper_model = "tiny.en"
 
 
 def download_models():
@@ -32,7 +33,7 @@ image = (
         ],
     )
     .apt_install("ffmpeg")
-    .pip_install("faster-whisper", "pydub", "groq", "elevenlabs")
+    .pip_install("faster-whisper", "pydub", "groq", "elevenlabs", "soundfile")
     .run_function(download_models, gpu=gpu.A10G())
 )
 
@@ -43,6 +44,11 @@ with image.imports():
     import os
     from elevenlabs.client import ElevenLabs
     from faster_whisper import WhisperModel
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+    from src.asr import FasterWhisperASR
+    from src.audio import AudioStream, audio_samples_from_file
+    from src.transcriber import audio_transcriber
+    from src.config import max_no_data_seconds, inactivity_window_seconds, SAMPLES_PER_SECOND, max_inactivity_seconds
 
 
 @web_app.get("/health")
@@ -52,41 +58,80 @@ def health():
 
 @web_app.websocket("/ws")
 async def transcribe_stream(ws: WebSocket):
+    async def audio_receiver(ws: WebSocket, audio_stream: AudioStream) -> None:
+        try:
+            print("Inside audio_receiver")
+            while True:
+                message = await asyncio.wait_for(ws.receive(), timeout=max_no_data_seconds)
+                if message is None or message.get('type') != 'websocket.receive':
+                    print("Connection closed, no message received, or incorrect message type.")
+                    return
+
+                message_text = message.get('text')
+                if not message_text:
+                    print("No text in the message.")
+                    continue
+
+                # Parse the JSON text
+                data = json.loads(message_text)
+                audio_base64 = data['audio']
+                bytes_ = base64.b64decode(audio_base64)
+                print(f"Received {len(bytes_)} bytes of audio data")
+                audio_samples = audio_samples_from_file(BytesIO(bytes_))
+                audio_stream.extend(audio_samples)
+                if audio_stream.duration - inactivity_window_seconds >= 0:
+                    audio = audio_stream.after(
+                        audio_stream.duration - inactivity_window_seconds
+                    )
+                    vad_opts = VadOptions(min_silence_duration_ms=500, speech_pad_ms=0)
+                    # NOTE: This is a synchronous operation that runs every time new data is received.
+                    # This shouldn't be an issue unless data is being received in tiny chunks or the user's machine is a potato.
+                    timestamps = get_speech_timestamps(audio.data, vad_opts)
+                    if len(timestamps) == 0:
+                        print(f"No speech detected in the last {inactivity_window_seconds} seconds.")
+                        break
+                    elif (
+                            # last speech end time
+                            inactivity_window_seconds
+                            - timestamps[-1]["end"] / SAMPLES_PER_SECOND
+                            >= max_inactivity_seconds
+                    ):
+                        print(
+                            f"Not enough speech in the last {inactivity_window_seconds} seconds."
+                        )
+                        break
+        except asyncio.TimeoutError:
+            print(
+                f"No data received in {max_no_data_seconds} seconds. Closing the connection."
+            )
+        except WebSocketDisconnect as e:
+            print(f"Client disconnected: {e}")
+        except Exception as e:
+            print("Error in audio_receiver: ", e)
+        audio_stream.close()
+
     try:
         await ws.accept()
         transcribe_opts = {
             "vad_filter": True,
             "condition_on_previous_text": False,
         }
-        model = WhisperModel(whisper_model, device="cuda")
-        transcription = ""
-        audio_buffer = np.array([], dtype=np.int16)
+        whisper = WhisperModel(whisper_model, device="cuda")
+        print("Loaded whisper model")
+        asr = FasterWhisperASR(whisper, **transcribe_opts)
+        print("Loaded asr model")
+        audio_stream = AudioStream()
+        print("Opened audio stream")
+        async with asyncio.TaskGroup() as tg:
+            print("Inside task group")
+            tg.create_task(audio_receiver(ws, audio_stream))
+            print("Created audio_receiver task")
+            async for transcription in audio_transcriber(asr, audio_stream):
+                print(f"Sending transcription: {transcription.text}")
+                if ws.client_state == WebSocketState.DISCONNECTED:
+                    break
 
-        while True:
-            message = await ws.receive_text()
-            data = json.loads(message)
-            event_type = data['event']
-
-            if event_type == "end":
-                break
-
-            audio_data = base64.b64decode(data['audio'])
-
-            pcm_array = np.frombuffer(audio_data, dtype=np.int16)
-            audio_buffer = np.concatenate((audio_buffer, pcm_array), axis=0)
-
-            audio_np = audio_buffer.astype(np.float32)
-            audio_np /= np.iinfo(np.int16).max
-
-            segments = model.transcribe(audio_np)
-            text = " ".join(seg.text for seg in segments[0])
-            text = text.strip()
-            print(text, end="")
-            transcription += text
-
-            audio_buffer = np.array([], dtype=np.int16)  # clear the buffer
-
-        print("\nEnded, transcription: ", transcription)
+                await ws.send_text(transcription.text)
 
     except Exception as e:
         print(f"Error: {e}")
