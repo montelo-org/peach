@@ -1,22 +1,23 @@
+import base64
 import json
 import time
 from io import BytesIO
 from typing import List
 
-from fastapi import FastAPI, UploadFile, Form
+from fastapi import FastAPI, UploadFile, Form, Response
 from fastapi.responses import JSONResponse
 from modal import App, Image, asgi_app, Secret, gpu
+from starlette.websockets import WebSocket
 
 web_app = FastAPI()
 app = App("peach-api")
-whisper_model = "tiny.en"
-whisper_compute_type = "int8_float16"
+whisper_model = "base.en"
 
 
 def download_models():
     from faster_whisper import WhisperModel
 
-    WhisperModel(whisper_model, device="cuda", compute_type=whisper_compute_type)
+    WhisperModel(whisper_model, device="cuda")
 
 
 image = (
@@ -38,15 +39,59 @@ image = (
 with image.imports():
     from pydub import AudioSegment
     import numpy as np
-    from faster_whisper import WhisperModel
     from groq import Groq
     import os
     from elevenlabs.client import ElevenLabs
+    from faster_whisper import WhisperModel
 
 
-@web_app.get("/")
+@web_app.get("/health")
 def health():
-    return "gucci"
+    return Response(status_code=200, content="gucci")
+
+
+@web_app.websocket("/ws")
+async def transcribe_stream(ws: WebSocket):
+    try:
+        await ws.accept()
+        transcribe_opts = {
+            "vad_filter": True,
+            "condition_on_previous_text": False,
+        }
+        model = WhisperModel(whisper_model, device="cuda")
+        transcription = ""
+        audio_buffer = np.array([], dtype=np.int16)
+
+        while True:
+            message = await ws.receive_text()
+            data = json.loads(message)
+            event_type = data['event']
+
+            if event_type == "end":
+                break
+
+            audio_data = base64.b64decode(data['audio'])
+
+            pcm_array = np.frombuffer(audio_data, dtype=np.int16)
+            audio_buffer = np.concatenate((audio_buffer, pcm_array), axis=0)
+
+            audio_np = audio_buffer.astype(np.float32)
+            audio_np /= np.iinfo(np.int16).max
+
+            segments = model.transcribe(audio_np)
+            text = " ".join(seg.text for seg in segments[0])
+            text = text.strip()
+            print(text, end="")
+            transcription += text
+
+            audio_buffer = np.array([], dtype=np.int16)  # clear the buffer
+
+        print("\nEnded, transcription: ", transcription)
+
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        await ws.close()
 
 
 @web_app.post("/upload")
@@ -70,7 +115,7 @@ async def upload_audio(file: UploadFile, messages: List[str] = Form(...)):
         audio_np = np.frombuffer(raw_data, dtype=np.int16).astype(np.float32)
         audio_np /= np.iinfo(np.int16).max
 
-        model = WhisperModel(whisper_model, device="cuda", compute_type=whisper_compute_type)
+        model = WhisperModel(whisper_model, device="cuda")
         segments, info = model.transcribe(audio_np, beam_size=5)
         transcription = ""
         for segment in segments:
