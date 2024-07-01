@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import time
+from enum import Enum
 
 import colorlog
 import numpy as np
@@ -96,6 +97,12 @@ Answer: If both the Bluetooth transmitter and receiver are moving at the speed o
 ]
 
 
+class WsEvent(Enum):
+    AUDIO_UPDATE = "AUDIO_UPDATE"
+    AUDIO_END = "AUDIO_END"
+    SEND_MESSAGES = "SEND_MESSAGES"
+
+
 # ui
 class UIStates:
     IDLING = "idling"
@@ -141,33 +148,6 @@ def speech(text: str) -> None:
     stream(audio_stream)
 
 
-def process_and_transcribe(audio_data):
-    """Process, transcribe, and convert text to speech for audio data directly from the queue."""
-    global ui_state
-    global messages
-
-    ui_state = UIStates.PROCESSING
-
-    file_path = "data/temp_audio.wav"
-    sf.write(file_path, audio_data, 16000, format="wav")
-    logging.info("Audio file saved. Transcribing now")
-
-    url = f"{os.getenv("PEACH_API_URL")}/upload"
-    with open(file_path, "rb") as file:
-        files = {
-            "file": file
-        }
-        data = {
-            "messages": json.dumps(messages)
-        }
-        response = requests.post(url, files=files, data=data)
-        ai_response = response.json()
-        logging.info(f"ai_response: {ai_response}")
-        speech(ai_response)
-
-    ui_state = UIStates.IDLING
-
-
 def play_audio(file_path: str) -> None:
     logging.info("Audio playing")
     data, file_samplerate = sf.read(file_path)
@@ -176,7 +156,7 @@ def play_audio(file_path: str) -> None:
     logging.info("Audio finished")
 
 
-async def listen_and_record(recorder: PvRecorder) -> np.ndarray:
+async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
     play_audio(random.choice(["data/s1.mp3", "data/s2.mp3", "data/s3.mp3", "data/s4.mp3"]))
 
     logging.info("Start speaking")
@@ -185,7 +165,7 @@ async def listen_and_record(recorder: PvRecorder) -> np.ndarray:
     ui_state = UIStates.RECORDING
 
     duration = 30
-    silence_count_limit = 50
+    silence_count_limit = 30
 
     start_time = time.time()
     recorded_data = []
@@ -193,67 +173,128 @@ async def listen_and_record(recorder: PvRecorder) -> np.ndarray:
     volumes = []
     silence_threshold = 300
     silence_counter = 0
-    websocket_url = f"wss://{os.getenv("PEACH_API_URL").replace("https://", "")}/ws"
-    buffer_duration = 0.4
+    buffer_duration = 0.5
     buffer_frames = []
     frame_rate = 16000
     frames_per_buffer = int(frame_rate * buffer_duration)
 
-    async def send_audio_data(websocket: websockets.WebSocketClientProtocol, audio_data, event_type):
+    async def send_audio_data(audio_data, event_type):
         audio_base64 = base64.b64encode(audio_data.tobytes()).decode("utf-8")
         message = json.dumps({
             "event": event_type,
             "audio": audio_base64
         })
-        await websocket.send(message)
+        await queue.put(message)
 
-    async with websockets.connect(websocket_url) as websocket:
-        while True:
-            pcm = recorder.read()
+    while True:
+        pcm = recorder.read()
 
-            if not pcm:
-                continue
+        if not pcm:
+            continue
 
-            pcm_array = np.array(pcm, dtype=np.int16)
-            volume = np.sqrt(np.mean(np.square(pcm_array.astype(np.float32))))
-            logging.info(f"Volume: {volume:.2f}")
-            recorded_data.append(pcm_array)
-            buffer_frames.extend(pcm_array)
+        pcm_array = np.array(pcm, dtype=np.int16)
+        volume = np.sqrt(np.mean(np.square(pcm_array.astype(np.float32))))
+        logging.debug(f"Volume: {volume:.2f}")
+        recorded_data.append(pcm_array)
+        buffer_frames.extend(pcm_array)
 
-            current_time = time.time() - start_time
+        current_time = time.time() - start_time
 
-            if len(buffer_frames) >= frames_per_buffer:
-                # Only use the latest frames_per_buffer frames
-                buffer_to_send = np.array(buffer_frames[-frames_per_buffer:], dtype=np.int16)
-                await asyncio.create_task(send_audio_data(websocket, buffer_to_send, "update"))
-                buffer_frames = buffer_frames[frames_per_buffer:]
+        if len(buffer_frames) >= frames_per_buffer:
+            # Only use the latest frames_per_buffer frames
+            buffer_to_send = np.array(buffer_frames[-frames_per_buffer:], dtype=np.int16)
+            await asyncio.create_task(send_audio_data(buffer_to_send, WsEvent.AUDIO_UPDATE.value))
+            buffer_frames = buffer_frames[frames_per_buffer:]
 
-            # Collect volumes for initial period to set threshold
-            if current_time <= initial_record_time:
-                volumes.append(volume)
-            elif len(volumes) > 0:
-                silence_threshold = 1.3 * np.median(volumes)  # Update threshold after initial recording
-                volumes = []  # Clear volumes list to prevent recalculating threshold
-                logging.info(f"Silence threshold set at: {silence_threshold:.2f}")
+        # Collect volumes for initial period to set threshold
+        if current_time <= initial_record_time:
+            volumes.append(volume)
+        elif len(volumes) > 0:
+            silence_threshold = 1.3 * np.median(volumes)
+            volumes = []
+            logging.info(f"Silence threshold set at: {silence_threshold:.2f}")
 
-            # Track silence and record data
-            if volume > silence_threshold:
-                silence_counter = 0
-            else:
-                silence_counter += 1
-                if silence_counter >= silence_count_limit:
-                    logging.info("Consecutive silence detected, ending recording.")
-                    break
-
-            if current_time > duration:
-                logging.info("Maximum duration reached, ending recording.")
+        # Track silence and record data
+        if volume > silence_threshold:
+            silence_counter = 0
+        else:
+            silence_counter += 1
+            if silence_counter >= silence_count_limit:
+                logging.info("Consecutive silence detected, ending recording.")
                 break
 
-        await send_audio_data(websocket, buffer_to_send, "end")
+        if current_time > duration:
+            logging.info("Maximum duration reached, ending recording.")
+            break
 
-        play_audio("data/ting.mp3")
+        await asyncio.sleep(0.02)
 
-        return np.concatenate(recorded_data, axis=0) if recorded_data else np.array([])
+    await queue.put(json.dumps({
+        "event": WsEvent.AUDIO_END.value,
+    }))
+
+    await queue.put(json.dumps({
+        "event": WsEvent.SEND_MESSAGES.value,
+        "messages": messages,
+    }))
+
+    # closes the websocket_sender
+    await queue.put(None)
+
+
+async def websocket_sender(queue: asyncio.Queue, ws: websockets.WebSocketClientProtocol):
+    try:
+        while True:
+            # Optionally check if the websocket is still open
+            if ws.closed:
+                logging.info("WebSocket is closed, stopping sender.")
+                break
+
+            data = await queue.get()
+            if data is None:  # Use a sentinel value to indicate the sender should stop.
+                break
+
+            logging.info("[socket send]")
+            await ws.send(data)  # This can throw an exception if the websocket is closed.
+    except websockets.exceptions.ConnectionClosed as e:
+        logging.error(f"WebSocket connection closed unexpectedly: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
+    finally:
+        logging.info("Closed websocket sender")
+
+
+async def websocket_receiver(ws: websockets.WebSocketClientProtocol):
+    elevenlabs_framerate = 24000
+    stream = sd.OutputStream(samplerate=elevenlabs_framerate, channels=1, dtype='int16')
+    stream.start()
+
+    try:
+        while True:
+            data = await ws.recv()
+            if isinstance(data, bytes):
+                np_data = np.frombuffer(data, dtype=np.int16)
+                stream.write(np_data)
+            else:
+                logging.error("Received non-byte data")
+    except websockets.exceptions.ConnectionClosed:
+        logging.info("WebSocket connection closed.")
+    except Exception as e:
+        logging.error(f"Unhandled error: {e}")
+    finally:
+        stream.stop()
+        stream.close()
+        logging.info("Closed websocket receiver")
+
+
+async def websocket_handler(queue: asyncio.Queue, websocket_url: str):
+    logging.info("Creating WebSocket connection")
+    async with websockets.connect(websocket_url) as websocket:
+        logging.info("WebSocket connected")
+        sender_task = asyncio.create_task(websocket_sender(queue, websocket))
+        receiver_task = asyncio.create_task(websocket_receiver(websocket))
+        await asyncio.gather(sender_task, receiver_task)
+    logging.info("Closing websocker handler")
 
 
 async def main() -> None:
@@ -264,14 +305,20 @@ async def main() -> None:
         global ui_state
         ui_state = UIStates.IDLING
 
+        websocket_url = f"wss://{os.getenv("PEACH_API_URL").replace("https://", "")}/ws"
+
         while True:
             pcm = recorder.read()
             result = porcupine.process(pcm)
 
             if result >= 0:
                 logging.info("Wake word detected")
-                audio_data = await listen_and_record(recorder)
-                process_and_transcribe(audio_data)
+                queue = asyncio.Queue()
+                async with asyncio.TaskGroup() as tg:
+                    tg.create_task(websocket_handler(queue, websocket_url))
+                    tg.create_task(listen_and_record(queue, recorder))
+                logging.info("Done processing, restarting wake word detection")
+
     except KeyboardInterrupt:
         logging.info("Keyboard interrupt")
     finally:
