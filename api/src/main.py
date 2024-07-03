@@ -5,19 +5,27 @@ from enum import Enum
 from io import BytesIO
 
 from fastapi import FastAPI, Response
-from modal import Image, asgi_app, Secret, gpu
+from modal import Image, asgi_app, Secret, gpu, Dict
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from src.common import app
 
 web_app = FastAPI()
 whisper_model = "tiny.en"
+secret_name = "peach-secrets"
+globals = Dict.from_name("globals", create_if_missing=True)
 
 
 def download_models():
     from faster_whisper import WhisperModel
+    from cartesia import Cartesia
 
     WhisperModel(whisper_model, device="cuda")
+
+    cartesia = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
+    voice_id = "5345cf08-6f37-424d-a5d9-8ae1101b9377"  # Maria
+    voice = cartesia.voices.get(id=voice_id)
+    globals["voice"] = voice
 
 
 image = (
@@ -29,17 +37,18 @@ image = (
             "RUN add-apt-repository ppa:deadsnakes/ppa",
             "RUN apt install python3.11 python3-pip -y",
             "RUN apt install python-is-python3 -y",
-        ],
+        ]
     )
-    .apt_install("ffmpeg")
-    .pip_install("faster-whisper", "pydub", "groq", "elevenlabs", "soundfile")
-    .run_function(download_models, gpu=gpu.A10G())
+    .apt_install("ffmpeg", "portaudio19-dev")
+    .pip_install("faster-whisper", "pydub", "groq", "elevenlabs", "soundfile", "cartesia")
+    .run_function(download_models, gpu=gpu.A10G(), secrets=[Secret.from_name(secret_name)])
 )
 
 with image.imports():
     import os
     from groq import Groq
     from elevenlabs.client import ElevenLabs
+    from cartesia import Cartesia
     from faster_whisper import WhisperModel
     from faster_whisper.vad import VadOptions, get_speech_timestamps
     from src.asr import FasterWhisperASR
@@ -63,6 +72,7 @@ async def transcribe_stream(ws: WebSocket):
     groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
     ai_model = "llama3-70b-8192"
     elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
+    cartesia = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
 
     async def audio_receiver(ws: WebSocket, audio_stream: AudioStream) -> None:
         try:
@@ -126,7 +136,7 @@ async def transcribe_stream(ws: WebSocket):
 
         return content
 
-    async def speech(ws: WebSocket, ai_response: str):
+    async def elevenlabs_speech(ws: WebSocket, ai_response: str):
         generator = elevenlabs.generate(
             text=ai_response,
             voice="Matilda",
@@ -162,6 +172,33 @@ async def transcribe_stream(ws: WebSocket):
             if len(buffer) > 0:
                 print(f"Leftover data in buffer not sent: {len(buffer)} bytes")
 
+    async def cartesia_speech(ws: WebSocket, ai_response: str):
+        model_id = "sonic-english"
+        output_format = {
+            "container": "raw",
+            "encoding": "pcm_s16le",
+            "sample_rate": 24000,
+        }
+
+        cartesia_ws = cartesia.tts.websocket()
+
+        try:
+            for output in cartesia_ws.send(
+                    model_id=model_id,
+                    transcript=ai_response,
+                    voice_embedding=globals["voice"]["embedding"],
+                    stream=True,
+                    output_format=output_format,
+            ):
+                buffer = output["audio"]
+                await ws.send_bytes(buffer)
+
+        except Exception as e:
+            print(f"Error during audio generation or WebSocket transmission: {e}")
+
+        finally:
+            cartesia_ws.close()
+
     try:
         await ws.accept()
 
@@ -195,14 +232,15 @@ async def transcribe_stream(ws: WebSocket):
         ai_response = ai(full_transcription, messages)
         print("ai_response: ", ai_response)
 
-        await speech(ws, ai_response)
+        # await elevenlabs_speech(ws, ai_response)
+        await cartesia_speech(ws, ai_response)
     except Exception as e:
         print(f"Error: {e}")
     finally:
         await ws.close()
 
 
-@app.function(image=image, secrets=[Secret.from_name("peach-secrets")], gpu=gpu.A10G())
+@app.function(image=image, secrets=[Secret.from_name(secret_name)], gpu=gpu.A10G())
 @asgi_app()
 def fastapi_app():
     return web_app
