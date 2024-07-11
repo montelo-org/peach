@@ -28,6 +28,9 @@ colorlog = "^6.8.2"
 webrtcvad = "^2.0.10"
 setuptools = "^70.1.1"
 halo = "^0.0.31"
+uvicorn = "^0.30.1"
+fastapi = "^0.111.0"
+starlette = "^0.37.2"
 
 
 [build-system]

@@ -13,16 +13,18 @@ import pvporcupine
 import requests
 import sounddevice as sd
 import soundfile as sf
+import uvicorn
 import webrtcvad
 import websockets
 from dotenv import load_dotenv
 from elevenlabs import stream
 from elevenlabs.client import ElevenLabs
-from flask import Flask
-from flask_cors import CORS, cross_origin
+from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
 from halo import Halo
 from pvrecorder import PvRecorder
+from starlette.websockets import WebSocket
 
 handler = colorlog.StreamHandler()
 handler.setFormatter(colorlog.ColoredFormatter(
@@ -76,6 +78,9 @@ ONLY RESPOND WITH THE ANSWER TO THE USER"S REQUEST. DO NOT ADD UNNECCESSARY INFO
     }
 ]
 
+# globals
+ui_audio_queue = asyncio.Queue()
+
 
 class WsEvent(Enum):
     AUDIO_UPDATE = "AUDIO_UPDATE"
@@ -94,27 +99,45 @@ class UIStates:
 
 ui_state = UIStates.IDLING
 
-app = Flask(__name__)
-CORS(
-    app,
-    resources={r"/*": {"origins": "*"}},
-    methods=["GET", "POST", "OPTIONS", "PUT", "DELETE"],
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Access-Control-Allow-Credentials",
-        "Access-Control-Allow-Origin",
-    ],
+app = FastAPI()
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-app.logger.setLevel(logging.WARNING)
-logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 
-@app.route("/")
-@cross_origin(origin="*")
-def get_state():
-    return ui_state
+@app.get("/")
+def health():
+    return Response(status_code=200, content="gucci")
+
+@app.get("/state")
+def ui_state():
+    return Response(status_code=200, content=ui_state)
+
+
+@app.websocket("/ws")
+async def ui_websocket(ws: WebSocket):
+    try:
+        print("In ui websocket")
+        global ui_audio_queue
+        await ws.accept()
+        print("Accepted websocket")
+
+        while True:
+            data = await ui_audio_queue.get()
+            if data is None:
+                break
+
+            await ws.send(data)
+            await asyncio.sleep(0.01)
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        await ws.close()
 
 
 # cli
@@ -137,19 +160,21 @@ def play_audio(file_path: str) -> None:
 
 
 async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
+    global ui_state
+    ui_state = UIStates.RECORDING
+    await asyncio.sleep(0.01)
+    
+    global ui_audio_queue
     play_audio(random.choice(["data/s1.mp3", "data/s2.mp3", "data/s3.mp3", "data/s4.mp3"]))
 
     logging.info("Start speaking")
 
-    global ui_state
-    ui_state = UIStates.RECORDING
-
     duration = 30
-    silence_count_limit = 30
+    silence_count_limit = 50
 
     start_time = time.time()
     recorded_data = []
-    initial_record_time = 0.5
+    initial_record_time = 0.7
     volumes = []
     silence_threshold = 300
     silence_counter = 0
@@ -165,6 +190,7 @@ async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
             "audio": audio_base64
         })
         await queue.put(message)
+        await ui_audio_queue.put(message)
 
     while True:
         pcm = recorder.read()
@@ -209,9 +235,12 @@ async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
 
         await asyncio.sleep(0.02)
 
-    await queue.put(json.dumps({
+    ui_state = UIStates.PROCESSING
+    end_event_payload = json.dumps({
         "event": WsEvent.AUDIO_END.value,
-    }))
+    })
+    await queue.put(end_event_payload)
+    await ui_audio_queue.put(end_event_payload)
 
     await queue.put(json.dumps({
         "event": WsEvent.SEND_MESSAGES.value,
@@ -222,7 +251,7 @@ async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
     await queue.put(None)
 
 
-async def websocket_sender(queue: asyncio.Queue, ws: websockets.WebSocketClientProtocol):
+async def api_websocket_sender(queue: asyncio.Queue, ws: websockets.WebSocketClientProtocol):
     try:
         while True:
             # Optionally check if the websocket is still open
@@ -236,6 +265,7 @@ async def websocket_sender(queue: asyncio.Queue, ws: websockets.WebSocketClientP
 
             logging.info("[socket send]")
             await ws.send(data)  # This can throw an exception if the websocket is closed.
+            await asyncio.sleep(0.01)
     except websockets.exceptions.ConnectionClosed as e:
         logging.error(f"WebSocket connection closed unexpectedly: {e}")
     except Exception as e:
@@ -244,7 +274,9 @@ async def websocket_sender(queue: asyncio.Queue, ws: websockets.WebSocketClientP
         logging.info("Closed websocket sender")
 
 
-async def websocket_receiver(ws: websockets.WebSocketClientProtocol):
+async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
+    global messages
+    global ui_state
     elevenlabs_framerate = 24000
     stream = sd.OutputStream(samplerate=elevenlabs_framerate, channels=1, dtype='int16')
     stream.start()
@@ -253,10 +285,15 @@ async def websocket_receiver(ws: websockets.WebSocketClientProtocol):
         while True:
             data = await ws.recv()
             if isinstance(data, bytes):
+                ui_state = UIStates.PLAYBACK
                 np_data = np.frombuffer(data, dtype=np.int16)
                 stream.write(np_data)
+            elif isinstance(data, str):
+                messages.append(dict(role="user", content=data))
             else:
                 logging.error("Received non-byte data")
+                
+            await asyncio.sleep(0.01)
     except websockets.exceptions.ConnectionClosed:
         logging.info("WebSocket connection closed.")
     except Exception as e:
@@ -264,20 +301,28 @@ async def websocket_receiver(ws: websockets.WebSocketClientProtocol):
     finally:
         stream.stop()
         stream.close()
+        ui_state = UIStates.IDLING
         logging.info("Closed websocket receiver")
 
 
-async def websocket_handler(queue: asyncio.Queue, websocket_url: str):
-    logging.info("Creating WebSocket connection")
-    async with websockets.connect(websocket_url) as websocket:
-        logging.info("WebSocket connected")
-        sender_task = asyncio.create_task(websocket_sender(queue, websocket))
-        receiver_task = asyncio.create_task(websocket_receiver(websocket))
+async def api_websocket_handler(queue: asyncio.Queue, api_websocket_url: str):
+    api_websocket = None
+
+    try:
+        logging.info("Creating API WebSocket connection")
+        api_websocket = await websockets.connect(api_websocket_url)
+        logging.info("Created API WebSocket connection")
+
+        sender_task = asyncio.create_task(api_websocket_sender(queue, api_websocket))
+        receiver_task = asyncio.create_task(api_websocket_receiver(api_websocket))
         await asyncio.gather(sender_task, receiver_task)
-    logging.info("Closing websocker handler")
+    finally:
+        if api_websocket:
+            await api_websocket.close()
+            logging.info("Closing API websocket handler")
 
 
-async def main() -> None:
+async def record_thread() -> None:
     try:
         recorder.start()
         logging.info("Recording started, start speaking!")
@@ -285,7 +330,7 @@ async def main() -> None:
         global ui_state
         ui_state = UIStates.IDLING
 
-        websocket_url = f"wss://{os.getenv("PEACH_API_URL").replace("https://", "")}/ws"
+        api_websocket_url = f"wss://{os.getenv("PEACH_API_URL").replace("https://", "")}/ws"
 
         while True:
             pcm = recorder.read()
@@ -295,10 +340,11 @@ async def main() -> None:
                 logging.info("Wake word detected")
                 queue = asyncio.Queue()
                 async with asyncio.TaskGroup() as tg:
-                    tg.create_task(websocket_handler(queue, websocket_url))
+                    tg.create_task(api_websocket_handler(queue, api_websocket_url))
                     tg.create_task(listen_and_record(queue, recorder))
                 logging.info("Done processing, restarting wake word detection")
 
+            await asyncio.sleep(0.01)
     except KeyboardInterrupt:
         logging.info("Keyboard interrupt")
     finally:
@@ -307,7 +353,19 @@ async def main() -> None:
         recorder.delete()
 
 
-if __name__ == "__main__":
+async def run_server():
+    try:
+        logging.info("In run_server")
+        config = uvicorn.Config(app, host="0.0.0.0", port=3006, log_level="info")
+        server = uvicorn.Server(config)
+        logging.info(f"Running server at {server.config.host}:{server.config.port}")
+        await server.serve()
+        await server.shutdown()
+    except Exception as e:
+        logging.error(f"Failed to start server: {e}")
+
+
+async def main():
     logging.info("🍑 Peach")
 
     recorder_frame_length = recorder.frame_length
@@ -337,4 +395,10 @@ if __name__ == "__main__":
     spinner.succeed("API ok, starting main")
     spinner.stop()
 
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(run_server())
+        tg.create_task(record_thread())
+
+
+if __name__ == "__main__":
     asyncio.run(main())

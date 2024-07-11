@@ -3,11 +3,11 @@
 ### Development
 
 ```bash
-sudo poetry run modal serve api.py
+sudo poetry run modal serve src/main.py
 ```
 
 ### Deploy
 
 ```bash
-sudo poetry run modal deploy api.py
+sudo poetry run modal deploy src/main.py
 ```

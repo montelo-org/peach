@@ -29,19 +29,24 @@ def download_models():
 
 
 image = (
-    Image
-    .from_registry(
-        "nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04", add_python="3.11", setup_dockerfile_commands=[
+    Image.from_registry(
+        "nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04",
+        add_python="3.11",
+        setup_dockerfile_commands=[
             "RUN apt update",
             "RUN DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt install software-properties-common -y",
             "RUN add-apt-repository ppa:deadsnakes/ppa",
             "RUN apt install python3.11 python3-pip -y",
             "RUN apt install python-is-python3 -y",
-        ]
+        ],
     )
     .apt_install("ffmpeg", "portaudio19-dev")
-    .pip_install("faster-whisper", "pydub", "groq", "elevenlabs", "soundfile", "cartesia")
-    .run_function(download_models, gpu=gpu.A10G(), secrets=[Secret.from_name(secret_name)])
+    .pip_install(
+        "faster-whisper", "pydub", "groq", "elevenlabs", "soundfile", "cartesia"
+    )
+    .run_function(
+        download_models, gpu=gpu.A10G(), secrets=[Secret.from_name(secret_name)]
+    )
 )
 
 with image.imports():
@@ -54,7 +59,12 @@ with image.imports():
     from src.asr import FasterWhisperASR
     from src.audio import AudioStream, audio_samples_from_file
     from src.transcriber import audio_transcriber
-    from src.config import max_no_data_seconds, inactivity_window_seconds, SAMPLES_PER_SECOND, max_inactivity_seconds
+    from src.config import (
+        max_no_data_seconds,
+        inactivity_window_seconds,
+        SAMPLES_PER_SECOND,
+        max_inactivity_seconds,
+    )
 
 
 @web_app.get("/health")
@@ -77,7 +87,9 @@ async def transcribe_stream(ws: WebSocket):
     async def audio_receiver(ws: WebSocket, audio_stream: AudioStream) -> None:
         try:
             while True:
-                data = await asyncio.wait_for(ws.receive_json(), timeout=max_no_data_seconds)
+                data = await asyncio.wait_for(
+                    ws.receive_json(), timeout=max_no_data_seconds
+                )
                 event = data["event"]
 
                 if event == WsEvent.AUDIO_END.value:
@@ -97,13 +109,15 @@ async def transcribe_stream(ws: WebSocket):
                     # This shouldn"t be an issue unless data is being received in tiny chunks or the user"s machine is a potato.
                     timestamps = get_speech_timestamps(audio.data, vad_opts)
                     if len(timestamps) == 0:
-                        print(f"No speech detected in the last {inactivity_window_seconds} seconds.")
+                        print(
+                            f"No speech detected in the last {inactivity_window_seconds} seconds."
+                        )
                         break
                     elif (
-                            # last speech end time
-                            inactivity_window_seconds
-                            - timestamps[-1]["end"] / SAMPLES_PER_SECOND
-                            >= max_inactivity_seconds
+                        # last speech end time
+                        inactivity_window_seconds
+                        - timestamps[-1]["end"] / SAMPLES_PER_SECOND
+                        >= max_inactivity_seconds
                     ):
                         print(
                             f"Not enough speech in the last {inactivity_window_seconds} seconds."
@@ -158,16 +172,22 @@ async def transcribe_stream(ws: WebSocket):
                 while len(buffer) >= frame_size:
                     # Determine how many complete frames we can send
                     send_size = (len(buffer) // frame_size) * frame_size
-                    to_send = bytes(buffer[:send_size])  # Convert to bytes before sending
+                    to_send = bytes(
+                        buffer[:send_size]
+                    )  # Convert to bytes before sending
                     await ws.send_bytes(to_send)
                     buffer = buffer[send_size:]  # Remove the sent bytes from buffer
 
             # After loop, check if there's any leftover data in buffer that can be sent
             if len(buffer) > 0 and len(buffer) % frame_size == 0:
-                await ws.send_bytes(bytes(buffer))  # Convert to bytes and send remaining data
+                await ws.send_bytes(
+                    bytes(buffer)
+                )  # Convert to bytes and send remaining data
                 buffer.clear()  # Clear the buffer
         except Exception as e:
-            print(f"Error during audio stream generation or WebSocket transmission: {e}")
+            print(
+                f"Error during audio stream generation or WebSocket transmission: {e}"
+            )
         finally:
             if len(buffer) > 0:
                 print(f"Leftover data in buffer not sent: {len(buffer)} bytes")
@@ -184,11 +204,11 @@ async def transcribe_stream(ws: WebSocket):
 
         try:
             for output in cartesia_ws.send(
-                    model_id=model_id,
-                    transcript=ai_response,
-                    voice_embedding=globals["voice"]["embedding"],
-                    stream=True,
-                    output_format=output_format,
+                model_id=model_id,
+                transcript=ai_response,
+                voice_embedding=globals["voice"]["embedding"],
+                stream=True,
+                output_format=output_format,
             ):
                 buffer = output["audio"]
                 await ws.send_bytes(buffer)
@@ -232,8 +252,8 @@ async def transcribe_stream(ws: WebSocket):
         ai_response = ai(full_transcription, messages)
         print("ai_response: ", ai_response)
 
-        # await elevenlabs_speech(ws, ai_response)
-        await cartesia_speech(ws, ai_response)
+        await elevenlabs_speech(ws, ai_response)
+        # await cartesia_speech(ws, ai_response)
     except Exception as e:
         print(f"Error: {e}")
     finally:
