@@ -1,18 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { usePalette } from "@/lib/appState";
-import {
-  COORDINATE_TYPE,
-  TWO_PI,
-  type ICoordinateMapper,
-} from "@/lib/mappers/coordinateMappers/common";
+import { COORDINATE_TYPE, type ICoordinateMapper, TWO_PI, } from "@/lib/mappers/coordinateMappers/common";
 import { ColorPalette } from "@/lib/palettes";
 import { useFrame } from "@react-three/fiber";
-import {
-  BoxGeometry,
-  Matrix4,
-  MeshBasicMaterial,
-  type InstancedMesh,
-} from "three";
+import { BoxGeometry, type InstancedMesh, Matrix4, MeshBasicMaterial, } from "three";
 
 const BaseSphere = ({
                       coordinateMapper,
@@ -46,7 +37,7 @@ const BaseSphere = ({
       phi = Math.acos(1 - (2 * k) / nPoints) % Math.PI;
       theta = (Math.PI * (1 + Math.sqrt(5)) * k) % TWO_PI;
       
-      const waveOffset = Math.sin(elapsedTimeSec + phi * 0.1) * 0.1;
+      const waveOffset = Math.sin(elapsedTimeSec + phi * 2) * 0.2;
       x = Math.cos(theta + waveOffset) * Math.sin(phi + waveOffset);
       y = Math.sin(theta + waveOffset) * Math.sin(phi + waveOffset);
       z = Math.cos(phi + waveOffset);
@@ -61,8 +52,7 @@ const BaseSphere = ({
           phi / Math.PI,
           0,
           elapsedTimeSec,
-        ) +
-        Math.sin(elapsedTimeSec * 2 + phi * 5) * 0.1;
+        )
       
       meshRef.current.setMatrixAt(
         i,
@@ -88,7 +78,7 @@ const BaseSphere = ({
         attach="geometry"
         args={[cubeSideLength, cubeSideLength, cubeSideLength, 1]}
       />
-      <meshBasicMaterial attach="material" color={"white"} toneMapped={false} />
+      <meshBasicMaterial attach="material" color={"white"} toneMapped={false}/>
     </instancedMesh>
   );
 };
