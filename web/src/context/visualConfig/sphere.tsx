@@ -28,10 +28,10 @@ export const SphereVisualConfigContextProvider = ({
 }: PropsWithChildren<{
   initial?: Partial<SphereVisualConfig>;
 }>) => {
-  const [radius, setRadius] = useState<number>(initial?.radius ?? 6);
-  const [nPoints, setNPoints] = useState<number>(initial?.nPoints ?? 10000);
+  const [radius, setRadius] = useState<number>(initial?.radius ?? 5);
+  const [nPoints, setNPoints] = useState<number>(initial?.nPoints ?? 8000);
   const [unitSideLength, setUnitSideLength] = useState<number>(
-    initial?.unitSideLength ?? 0.05,
+    initial?.unitSideLength ?? 0.04,
   );
 
   return (

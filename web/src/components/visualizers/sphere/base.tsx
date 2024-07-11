@@ -18,7 +18,7 @@ const BaseSphere = ({
                       coordinateMapper,
                       radius = 2,
                       nPoints = 800,
-                      cubeSideLength = 0.05,
+                      cubeSideLength = 0.01,
                     }: {
   coordinateMapper: ICoordinateMapper;
   radius?: number;
@@ -46,7 +46,7 @@ const BaseSphere = ({
       phi = Math.acos(1 - (2 * k) / nPoints) % Math.PI;
       theta = (Math.PI * (1 + Math.sqrt(5)) * k) % TWO_PI;
       
-      const waveOffset = Math.sin(elapsedTimeSec + phi * 2) * 0.1;
+      const waveOffset = Math.sin(elapsedTimeSec + phi * 0.1) * 0.1;
       x = Math.cos(theta + waveOffset) * Math.sin(phi + waveOffset);
       y = Math.sin(theta + waveOffset) * Math.sin(phi + waveOffset);
       z = Math.cos(phi + waveOffset);

@@ -136,12 +136,12 @@ export class ColorPalette implements IColorPalette {
     switch (type) {
       case COLOR_PALETTE.WARM:
         return new ColorPalette(COLOR_PALETTE.WARM, [
-          "#FF2000",
-          "#FF5900",
-          "#FE9100",
+          "#4357AD",
+          "#48A9A6",
+          "#FFAC40",
           "#FEFDFC",
-          "#FEC194",
-          "#FE9F5B",
+          "#C1666B",
+          "#D4ADCF",
         ]);
       case COLOR_PALETTE.WARM_2:
         return new ColorPalette("Warm_2", [

@@ -1,4 +1,4 @@
-import { type HTMLAttributes, type HTMLProps, useMemo } from "react";
+import { FC, type HTMLAttributes, type HTMLProps, useEffect, useMemo } from "react";
 import {
   AUDIO_SOURCE,
   type AudioSource,
@@ -10,6 +10,7 @@ import { useAudioSourceContext, useAudioSourceContextSetters, } from "@/context/
 import { cn } from "@/lib/utils";
 import { FileUp, type LucideProps, Mic, } from "lucide-react";
 import { DockItem } from "@/components/controls/dock";
+import { UIStates } from "@/types";
 
 export const ValueLabel = ({
                              label,
@@ -63,13 +64,34 @@ const GridIconWrapper = ({
   );
 };
 
-export const AudioSourceSelect = () => {
+export const AudioSourceSelect: FC<{ serverState: UIStates }> = ({ serverState }) => {
   const { audioSource } = useAudioSourceContext();
   const { setAudioSource } = useAudioSourceContextSetters();
   const available = useMemo(() => {
     return getPlatformSupportedAudioSources();
   }, []);
   
+  useEffect(() => {
+    switch (serverState) {
+      case UIStates.IDLING:
+        setAudioSource("FILE_UPLOAD");
+        break;
+      case UIStates.PROCESSING:
+        setAudioSource("FILE_UPLOAD");
+        break;
+      case UIStates.RECORDING:
+        setAudioSource("MICROPHONE");
+        break;
+      case UIStates.PLAYBACK:
+        setAudioSource("MICROPHONE");
+        break;
+      case UIStates.IMAGE:
+        setAudioSource("FILE_UPLOAD")
+        break;
+      default:
+        break;
+    }
+  }, [serverState]);
   
   return available.map((source) => (
     <DockItem key={`grid_icon_${source}`}>
