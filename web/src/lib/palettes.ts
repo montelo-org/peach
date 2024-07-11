@@ -139,7 +139,7 @@ export class ColorPalette implements IColorPalette {
           "#4357AD",
           "#48A9A6",
           "#FFAC40",
-          "#FEFDFC",
+          // "#FEFDFC",
           "#C1666B",
           "#D4ADCF",
         ]);
