@@ -71,28 +71,6 @@ export const AudioSourceSelect: FC<{ serverState: UIStates }> = ({ serverState }
     return getPlatformSupportedAudioSources();
   }, []);
   
-  useEffect(() => {
-    switch (serverState) {
-      case UIStates.IDLING:
-        setAudioSource("FILE_UPLOAD");
-        break;
-      case UIStates.PROCESSING:
-        setAudioSource("FILE_UPLOAD");
-        break;
-      case UIStates.RECORDING:
-        setAudioSource("MICROPHONE");
-        break;
-      case UIStates.PLAYBACK:
-        setAudioSource("MICROPHONE");
-        break;
-      case UIStates.IMAGE:
-        setAudioSource("FILE_UPLOAD")
-        break;
-      default:
-        break;
-    }
-  }, [serverState]);
-  
   return available.map((source) => (
     <DockItem key={`grid_icon_${source}`}>
       <GridIconWrapper

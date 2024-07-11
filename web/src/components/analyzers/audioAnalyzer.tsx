@@ -11,7 +11,6 @@ const InternalAudioAnalyzer = () => {
   const audioCtx = useMemo(() => buildAudioContext(), []);
   const audio = useMemo(() => buildAudio(), []);
   const analyzer = useMemo(() => {
-    console.log("Creating analyzer...");
     return new FFTAnalyzer(audio, audioCtx, 1.0);
   }, [audio, audioCtx]);
   
@@ -27,7 +26,6 @@ const InternalMediaStreamAnalyzer = () => {
   const audioCtx = useMemo(() => buildAudioContext(), []);
   const audio = useMemo(() => buildAudio(), []);
   const analyzer = useMemo(() => {
-    console.log("Creating analyzer...");
     return new FFTAnalyzer(audio, audioCtx, 0.0);
   }, [audio, audioCtx]);
   

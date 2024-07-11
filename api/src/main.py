@@ -1,9 +1,11 @@
 import asyncio
 import base64
+import json
 import time
 from enum import Enum
 from io import BytesIO
 
+import requests
 from fastapi import FastAPI, Response
 from modal import Image, asgi_app, Secret, gpu, Dict
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -84,6 +86,43 @@ async def transcribe_stream(ws: WebSocket):
     elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
     cartesia = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
 
+    def generate_image(prompt):
+        prodia_key = "72a1b2b6-281a-4211-a658-e7c17780c2d2"
+        response = requests.post("https://api.prodia.com/v1/sdxl/generate", json={"prompt": prompt}, headers={
+            "accept": "application/json",
+            "content-type": "application/json",
+            "X-Prodia-Key": prodia_key,
+        })
+        data = response.json()
+        print("data: ", data)
+        job = data["job"]
+
+        if not job:
+            return "Image could not be generated"
+
+        num_tries = 0
+
+        while True:
+            if num_tries >= 30:
+                return "Image could not be generated"
+            response = requests.get(f"https://api.prodia.com/v1/job/{job}", headers={
+                "accept": "application/json",
+                "X-Prodia-Key": prodia_key
+            })
+            data = response.json()
+            print("job: ", data)
+            status = data["status"]
+
+            if status == "succeeded":
+                return data["imageUrl"]
+
+            num_tries += 1
+            time.sleep(1)
+
+    tool_map = dict(
+        generate_image=generate_image,
+    )
+
     async def audio_receiver(ws: WebSocket, audio_stream: AudioStream) -> None:
         try:
             while True:
@@ -114,10 +153,10 @@ async def transcribe_stream(ws: WebSocket):
                         )
                         break
                     elif (
-                        # last speech end time
-                        inactivity_window_seconds
-                        - timestamps[-1]["end"] / SAMPLES_PER_SECOND
-                        >= max_inactivity_seconds
+                            # last speech end time
+                            inactivity_window_seconds
+                            - timestamps[-1]["end"] / SAMPLES_PER_SECOND
+                            >= max_inactivity_seconds
                     ):
                         print(
                             f"Not enough speech in the last {inactivity_window_seconds} seconds."
@@ -133,22 +172,67 @@ async def transcribe_stream(ws: WebSocket):
             print("Error in audio_receiver: ", e)
         audio_stream.close()
 
-    def ai(transcription: str, messages):
+    def ai(transcription: str, messages) -> dict[str, str]:
         start_time = time.time()
 
         combined_messages = messages + [dict(role="user", content=transcription)]
         completion = groq.chat.completions.create(
             model=ai_model,
             messages=combined_messages,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "generate_image",
+                        "description": "DO NOT CALL THIS FUNCTION UNLESS THE USER ASKS TO GENERATE AN IMAGE.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "prompt": {
+                                    "type": "string",
+                                    "description": "The prompt to generate the image. Take the user's prompt and expand on it. Try to formulate 2-3 sentences for best results. Don't say 'generate an image...', just describe the image you'd like to generate.",
+                                }
+                            },
+                            "required": ["prompt"],
+                        },
+                    }
+                }
+            ],
+            tool_choice="auto",
+            max_tokens=200,
         )
-        content = completion.choices[0].message.content
-
         end_time = time.time()
         elapsed_time = (end_time - start_time) * 1000
         rounded_time = round(elapsed_time)
         print(f"ai - {rounded_time} ms")
 
-        return content
+        tool_calls = completion.choices[0].message.tool_calls
+
+        if tool_calls:
+            print("Tool call!")
+            messages.append(completion.choices[0].message.to_dict())
+            tool_call = tool_calls[0]
+            function_name = tool_call.function.name
+            print("Function call: ", function_name)
+            function_to_call = tool_map[function_name]
+            function_args = json.loads(tool_call.function.arguments)
+            print("Calling: ", function_name, " with args ", tool_call.function.arguments)
+            function_response = function_to_call(**function_args)
+            print("Function response: ", function_response)
+
+            if function_name == "generate_image":
+                return dict(content="Here's your image", image_url=function_response)
+
+            # second_response = groq.chat.completions.create(
+            #     model=ai_model,
+            #     messages=messages,
+            # )
+            # second_response_content = second_response.choices[0].message.content
+            # return second_response_content
+        else:
+            print("No tool call")
+            content = completion.choices[0].message.content or "Sorry something went wrong."
+            return dict(content=content, image_url=None)
 
     async def elevenlabs_speech(ws: WebSocket, ai_response: str):
         generator = elevenlabs.generate(
@@ -165,7 +249,6 @@ async def transcribe_stream(ws: WebSocket):
 
         try:
             for wav_bytes in generator:
-                print(f"Received audio data chunk of size {len(wav_bytes)} bytes")
                 buffer.extend(wav_bytes)
 
                 # Send data only when we have complete frames
@@ -204,11 +287,11 @@ async def transcribe_stream(ws: WebSocket):
 
         try:
             for output in cartesia_ws.send(
-                model_id=model_id,
-                transcript=ai_response,
-                voice_embedding=globals["voice"]["embedding"],
-                stream=True,
-                output_format=output_format,
+                    model_id=model_id,
+                    transcript=ai_response,
+                    voice_embedding=globals["voice"]["embedding"],
+                    stream=True,
+                    output_format=output_format,
             ):
                 buffer = output["audio"]
                 await ws.send_bytes(buffer)
@@ -251,9 +334,13 @@ async def transcribe_stream(ws: WebSocket):
 
         ai_response = ai(full_transcription, messages)
         print("ai_response: ", ai_response)
+        ai_content = ai_response["content"]
+        image_url = ai_response["image_url"]
 
-        await elevenlabs_speech(ws, ai_response)
-        # await cartesia_speech(ws, ai_response)
+        await elevenlabs_speech(ws, ai_content)
+        # await cartesia_speech(ws, ai_content)
+
+        await ws.send_json(ai_response)
     except Exception as e:
         print(f"Error: {e}")
     finally:

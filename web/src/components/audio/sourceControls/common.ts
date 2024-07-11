@@ -40,7 +40,6 @@ export const getPlatformSupportedAudioSources = (): AudioSource[] => {
 };
 
 export const buildAudio = () => {
-  console.log("Building audio...");
   const out = new Audio();
   out.crossOrigin = "anonymous";
   return out;
@@ -73,10 +72,8 @@ const webAudioTouchUnlock = (context: AudioContext) => {
 };
 
 export const buildAudioContext = () => {
-  console.log("Building audioCtx...");
   const audioCtx = new window.AudioContext();
   if (iOS()) {
-    console.log("Attempting to unlock AudioContext");
     webAudioTouchUnlock(audioCtx).then(
       function (unlocked) {
         if (unlocked) {

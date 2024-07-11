@@ -24,7 +24,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
 from halo import Halo
 from pvrecorder import PvRecorder
-from starlette.websockets import WebSocket
 
 handler = colorlog.StreamHandler()
 handler.setFormatter(colorlog.ColoredFormatter(
@@ -74,12 +73,11 @@ Answer the user"s question without adding additional phrases or unimportant info
 Simply respond with the answer to the user"s request.
 If the user asks to be dirty, don"t be shy and be dirty!
 ONLY RESPOND WITH THE ANSWER TO THE USER"S REQUEST. DO NOT ADD UNNECCESSARY INFORMATION.
+
+ONLY call generate_image the function when the user specifically asks to create an image. Otherwise, do not call any tool.
 """,
     }
 ]
-
-# globals
-ui_audio_queue = asyncio.Queue()
 
 
 class WsEvent(Enum):
@@ -97,6 +95,7 @@ class UIStates:
     IMAGE = "image"
 
 
+# globals
 ui_state = UIStates.IDLING
 
 app = FastAPI()
@@ -114,30 +113,10 @@ app.add_middleware(
 def health():
     return Response(status_code=200, content="gucci")
 
+
 @app.get("/state")
 def ui_state():
     return Response(status_code=200, content=ui_state)
-
-
-@app.websocket("/ws")
-async def ui_websocket(ws: WebSocket):
-    try:
-        print("In ui websocket")
-        global ui_audio_queue
-        await ws.accept()
-        print("Accepted websocket")
-
-        while True:
-            data = await ui_audio_queue.get()
-            if data is None:
-                break
-
-            await ws.send(data)
-            await asyncio.sleep(0.01)
-    except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        await ws.close()
 
 
 # cli
@@ -163,8 +142,8 @@ async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
     global ui_state
     ui_state = UIStates.RECORDING
     await asyncio.sleep(0.01)
-    
-    global ui_audio_queue
+
+    ui_audio_queue = asyncio.Queue()
     play_audio(random.choice(["data/s1.mp3", "data/s2.mp3", "data/s3.mp3", "data/s4.mp3"]))
 
     logging.info("Start speaking")
@@ -289,10 +268,14 @@ async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
                 np_data = np.frombuffer(data, dtype=np.int16)
                 stream.write(np_data)
             elif isinstance(data, str):
-                messages.append(dict(role="user", content=data))
+                data = json.loads(data)
+                ai_content = data["content"]
+                image_url = data["image_url"]
+                messages.append(dict(role="user", content=ai_content))
+                ui_state = f"{UIStates.IMAGE} {image_url}"
             else:
                 logging.error("Received non-byte data")
-                
+
             await asyncio.sleep(0.01)
     except websockets.exceptions.ConnectionClosed:
         logging.info("WebSocket connection closed.")
@@ -301,7 +284,8 @@ async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
     finally:
         stream.stop()
         stream.close()
-        ui_state = UIStates.IDLING
+        if not ui_state.startswith(UIStates.IMAGE):
+            ui_state = UIStates.IDLING
         logging.info("Closed websocket receiver")
 
 

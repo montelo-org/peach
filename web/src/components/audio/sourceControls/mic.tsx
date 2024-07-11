@@ -16,13 +16,11 @@ const MicrophoneAudioControls = ({
    * Make sure the microphone is enabled
    */
   useEffect(() => {
-    console.log("Disabling mic...");
     onDisabled();
     if (mediaStream?.current) {
       mediaStream.current = null;
     }
 
-    console.log("Enabling mic...");
     if (navigator.mediaDevices) {
       navigator.mediaDevices
         .getUserMedia({

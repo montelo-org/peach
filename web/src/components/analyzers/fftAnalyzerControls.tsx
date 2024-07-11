@@ -25,7 +25,6 @@ export const FFTAnalyzerControls = ({
     const bars = analyzer.getBars();
 
     if (freqData.length != bars.length) {
-      console.log(`Resizing ${bars.length}`);
       resizeVisualSourceData(bars.length);
       return;
     }

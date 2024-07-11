@@ -21,7 +21,6 @@ const useAudioFile = (audio: HTMLAudioElement) => {
       promise
         .then(() => {
           setIsPlaying(true);
-          console.log(`Playing audiofile`);
         })
         .catch((error) => {
           // Auto-play was prevented
@@ -34,7 +33,6 @@ const useAudioFile = (audio: HTMLAudioElement) => {
    * Make sure the correct file is playing
    */
   useEffect(() => {
-    console.log("Syncing, start w/ pause...");
     audio.pause();
     setIsPlaying(false);
 
@@ -43,7 +41,6 @@ const useAudioFile = (audio: HTMLAudioElement) => {
       return;
     }
 
-    console.log("Setting source...");
     audio.src = URL.createObjectURL(audioFile);
     setLoaded(true);
 
@@ -53,7 +50,6 @@ const useAudioFile = (audio: HTMLAudioElement) => {
     }
 
     return () => {
-      console.log("Pausing...");
       audio.pause();
       setIsPlaying(false);
     };
