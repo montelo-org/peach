@@ -179,26 +179,26 @@ async def transcribe_stream(ws: WebSocket):
         completion = groq.chat.completions.create(
             model=ai_model,
             messages=combined_messages,
-            tools=[
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "generate_image",
-                        "description": "DO NOT CALL THIS FUNCTION UNLESS THE USER ASKS TO GENERATE AN IMAGE.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "prompt": {
-                                    "type": "string",
-                                    "description": "The prompt to generate the image. Take the user's prompt and expand on it. Try to formulate 2-3 sentences for best results. Don't say 'generate an image...', just describe the image you'd like to generate.",
-                                }
-                            },
-                            "required": ["prompt"],
-                        },
-                    }
-                }
-            ],
-            tool_choice="auto",
+            # tools=[
+            #     {
+            #         "type": "function",
+            #         "function": {
+            #             "name": "generate_image",
+            #             "description": "DO NOT CALL THIS FUNCTION UNLESS THE USER ASKS TO GENERATE AN IMAGE.",
+            #             "parameters": {
+            #                 "type": "object",
+            #                 "properties": {
+            #                     "prompt": {
+            #                         "type": "string",
+            #                         "description": "The prompt to generate the image. Take the user's prompt and expand on it. Try to formulate 2-3 sentences for best results. Don't say 'generate an image...', just describe the image you'd like to generate.",
+            #                     }
+            #                 },
+            #                 "required": ["prompt"],
+            #             },
+            #         }
+            #     }
+            # ],
+            # tool_choice="auto",
             max_tokens=200,
         )
         end_time = time.time()

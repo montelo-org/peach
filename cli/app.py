@@ -271,8 +271,9 @@ async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
                 data = json.loads(data)
                 ai_content = data["content"]
                 image_url = data["image_url"]
-                messages.append(dict(role="user", content=ai_content))
-                ui_state = f"{UIStates.IMAGE} {image_url}"
+                if ai_content and image_url:
+                    messages.append(dict(role="user", content=ai_content))
+                    ui_state = f"{UIStates.IMAGE} {image_url}"
             else:
                 logging.error("Received non-byte data")
 
