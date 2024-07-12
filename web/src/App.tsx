@@ -72,7 +72,7 @@ const App = () => {
             </div>
           </>
         )}
-      <ControlsPanel serverState={serverState}/>
+      <ControlsPanel/>
     </main>
   );
 };

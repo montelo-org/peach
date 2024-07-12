@@ -64,7 +64,7 @@ const GridIconWrapper = ({
   );
 };
 
-export const AudioSourceSelect: FC<{ serverState: UIStates }> = ({ serverState }) => {
+export const AudioSourceSelect = () => {
   const { audioSource } = useAudioSourceContext();
   const { setAudioSource } = useAudioSourceContextSetters();
   const available = useMemo(() => {
