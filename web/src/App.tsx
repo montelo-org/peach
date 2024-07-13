@@ -1,7 +1,4 @@
-import { Suspense, useEffect, useState } from "react";
-import AudioAnalyzer from "@/components/analyzers/audioAnalyzer";
-import Visual3DCanvas from "@/components/canvas/Visual3D";
-import ControlsPanel from "@/components/controls/main";
+import { useEffect, useState } from "react";
 
 import { useAppStateActions } from "./lib/appState";
 import { UIStates } from "@/types";
@@ -29,7 +26,6 @@ const App = () => {
   }, []);
   
   useEffect(() => {
-    console.log("serverState: ", serverState);
     switch (true) {
       case serverState === UIStates.IDLING:
       case serverState === UIStates.PROCESSING:
@@ -49,32 +45,54 @@ const App = () => {
     }
   }, [serverState]);
   
+  const cssMap: Record<UIStates, string> = {
+    [UIStates.IDLING]: "bg-red-950",
+    [UIStates.RECORDING]: "animate-recording-pulse",
+    [UIStates.PROCESSING]: "animate-spin border-4 border-transparent border-t-red-500 border-b-red-500",
+    [UIStates.IMAGE]: "",
+    [UIStates.PLAYBACK]: "bg-red-950",
+  };
+  
   return (
-    <main className="relative h-[100dvh] w-[100dvw] bg-black">
-      {serverState.startsWith(UIStates.IMAGE) && imageUrl ?
-        <div className={"flex justify-center"}>
-          <img alt="Some image" src={imageUrl} width="50%" height="50%"/>
-        </div> : (
-          <>
-            <div
-              className="absolute h-[100dvh] w-[100dvw]"
-              onMouseDown={noteCanvasInteraction}
-              onTouchStart={noteCanvasInteraction}
-            >
-              <Suspense fallback={<span>loading...</span>}>
-                <Visual3DCanvas/>
-              </Suspense>
-            </div>
-            <div className="pointer-events-none absolute h-[100dvh] w-[100dvw]">
-              <Suspense fallback={<span>loading...</span>}>
-                <AudioAnalyzer/>
-              </Suspense>
-            </div>
-          </>
-        )}
-      <ControlsPanel/>
+    <main className="h-[100vh] w-[100vw] bg-black flex justify-center items-center">
+      <div className="flex flex-col gap-4 w-[25%] items-center">
+        <div className={`w-8 h-8 rounded-full ${cssMap[serverState]}`}></div>
+        <img
+          alt={""}
+          src={serverState.startsWith(UIStates.IMAGE) && imageUrl ? imageUrl : "/peach.png"}
+          width={"60%"}
+          height={"60%"}
+        />
+      </div>
     </main>
   );
+  
+  // return (
+  //   <main className="relative h-[100dvh] w-[100dvw] bg-black">
+  //     {serverState.startsWith(UIStates.IMAGE) && imageUrl ?
+  //       <div className={"flex justify-center"}>
+  //         <img alt="Some image" src={imageUrl} width="50%" height="50%"/>
+  //       </div> : (
+  //         <>
+  //           <div
+  //             className="absolute h-[100dvh] w-[100dvw]"
+  //             onMouseDown={noteCanvasInteraction}
+  //             onTouchStart={noteCanvasInteraction}
+  //           >
+  //             <Suspense fallback={<span>loading...</span>}>
+  //               <Visual3DCanvas/>
+  //             </Suspense>
+  //           </div>
+  //           <div className="pointer-events-none absolute h-[100dvh] w-[100dvw]">
+  //             <Suspense fallback={<span>loading...</span>}>
+  //               <AudioAnalyzer/>
+  //             </Suspense>
+  //           </div>
+  //         </>
+  //       )}
+  //     <ControlsPanel/>
+  //   </main>
+  // );
 };
 
 export default App;
