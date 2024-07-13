@@ -55,13 +55,13 @@ const App = () => {
   
   return (
     <main className="h-[100vh] w-[100vw] bg-black flex justify-center items-center">
-      <div className="flex flex-col gap-4 w-[25%] items-center">
-        <div className={`w-8 h-8 rounded-full ${cssMap[serverState]}`}></div>
+      <div className="flex flex-col gap-8 w-[40%] items-center">
+        <div className={`w-16 h-16 rounded-full ${cssMap[serverState]}`}></div>
         <img
           alt={""}
           src={serverState.startsWith(UIStates.IMAGE) && imageUrl ? imageUrl : "/peach.png"}
-          width={"60%"}
-          height={"60%"}
+          width={"100%"}
+          height={"100%"}
         />
       </div>
     </main>
