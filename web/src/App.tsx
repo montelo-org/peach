@@ -10,6 +10,8 @@ const App = () => {
   const [serverState, setServerState] = useState<UIStates>(UIStates.IDLING);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   
+  const showImage = !!(serverState.startsWith(UIStates.IMAGE) && imageUrl);
+  
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -55,15 +57,26 @@ const App = () => {
   
   return (
     <main className="h-[100vh] w-[100vw] bg-black flex justify-center items-center">
-      <div className="flex flex-col gap-8 w-[40%] items-center">
-        <div className={`w-16 h-16 rounded-full ${cssMap[serverState]}`}></div>
-        <img
-          alt={""}
-          src={serverState.startsWith(UIStates.IMAGE) && imageUrl ? imageUrl : "/peach.png"}
-          width={"100%"}
-          height={"100%"}
-        />
-      </div>
+      {
+        showImage ? (
+          <img
+            alt={""}
+            src={imageUrl}
+            width={"65%"}
+            height={"65%"}
+          />
+        ) : (
+          <div className="flex flex-col gap-8 w-[40%] items-center">
+            <div className={`w-16 h-16 rounded-full ${cssMap[serverState]}`}></div>
+            <img
+              alt={""}
+              src={"/peach.png"}
+              width={"100%"}
+              height={"100%"}
+            />
+          </div>
+        )
+      }
     </main>
   );
   

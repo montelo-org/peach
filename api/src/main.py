@@ -234,6 +234,13 @@ async def transcribe_stream(ws: WebSocket):
             content = completion.choices[0].message.content or "Sorry something went wrong."
             return dict(content=content, image_url=None)
 
+    def hardcoded_ai(transcription: str, messages) -> dict[str, str]:
+        time.sleep(0.5)
+        return dict(
+            content="Here's your image",
+            image_url="https://media-cldnry.s-nbcnews.com/image/upload/t_focal-560x280,f_avif,q_auto:eco,dpr_2/rockcms/2024-07/240713-donald-trump-rally-violence-5-se-757p-4dedf7.jpg",
+        )
+
     async def elevenlabs_speech(ws: WebSocket, ai_response: str):
         generator = elevenlabs.generate(
             text=ai_response,
@@ -332,10 +339,10 @@ async def transcribe_stream(ws: WebSocket):
             messages = message["messages"]
             break
 
-        ai_response = ai(full_transcription, messages)
+        # ai_response = ai(full_transcription, messages)
+        ai_response = hardcoded_ai(full_transcription, messages)
         print("ai_response: ", ai_response)
         ai_content = ai_response["content"]
-        image_url = ai_response["image_url"]
 
         await elevenlabs_speech(ws, ai_content)
         # await cartesia_speech(ws, ai_content)

@@ -75,11 +75,6 @@ If the user asks to be dirty, don"t be shy and be dirty!
 ONLY RESPOND WITH THE ANSWER TO THE USER"S REQUEST. DO NOT ADD UNNECCESSARY INFORMATION.
 
 ONLY call generate_image the function when the user specifically asks to create an image. Otherwise, do not call any tool.
-
-Here are some examples:
-
-Q: Give me a spicy would you rather question to ask my girlfriend.
-A: Would you rather have a threesome with a friend or a stranger?
 """,
     }
 ]
@@ -268,6 +263,7 @@ async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
     try:
         while True:
             data = await ws.recv()
+            print("Received ", type(data))
             if isinstance(data, bytes):
                 ui_state = UIStates.PLAYBACK
                 np_data = np.frombuffer(data, dtype=np.int16)
@@ -276,6 +272,8 @@ async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
                 data = json.loads(data)
                 ai_content = data["content"]
                 image_url = data["image_url"]
+                print("ai_content: ", ai_content)
+                print("image_url: ", image_url)
                 if ai_content and image_url:
                     messages.append(dict(role="user", content=ai_content))
                     ui_state = f"{UIStates.IMAGE} {image_url}"
