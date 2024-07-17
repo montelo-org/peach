@@ -35,6 +35,7 @@ export const Recorder = () => {
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 	const gainNodeRef = useRef<GainNode | null>(null);
 	const nextPlayTimeRef = useRef<number>(0);
+	const startTimeRef = useRef(0);
 
 	const closeAudioResources = () => {
 		if (streamingProcessorRef.current && "disconnect" in streamingProcessorRef.current) {
@@ -58,12 +59,13 @@ export const Recorder = () => {
 		}
 	};
 
-	const sendAudioData = async (audioData: Int16Array) => {
-		console.log("Sending audio!");
+	const sendAudioData = (audioData: Int16Array, eventType: string) => {
 		if (websocketRef.current && websocketRef.current?.readyState === WebSocket.OPEN) {
-			const base64Audio = btoa(decodeURIComponent(encodeURIComponent(audioData)));
+			const arrayBuffer = audioData.buffer;
+			const uint8Array = new Uint8Array(arrayBuffer);
+			const base64Audio = btoa(String.fromCharCode.apply(null, uint8Array));
 			const message = JSON.stringify({
-				event: "AUDIO_UPDATE",
+				event: eventType,
 				audio: base64Audio,
 			});
 			websocketRef.current?.send(message);
@@ -82,11 +84,16 @@ export const Recorder = () => {
 
 		while (combinedBuffer.length >= FRAMES_PER_BUFFER) {
 			const bufferToSend = combinedBuffer.slice(0, FRAMES_PER_BUFFER);
-			void sendAudioData(bufferToSend);
+			sendAudioData(bufferToSend, "AUDIO_UPDATE");
 			combinedBuffer = combinedBuffer.slice(FRAMES_PER_BUFFER);
 		}
 
 		audioBufferRef.current = combinedBuffer;
+
+		if (Date.now() - startTimeRef.current > 10000) {
+			console.log("Maximum duration reached, ending recording.");
+			stopRecording();
+		}
 	};
 
 	const schedulePlayback = (audioBuffer: AudioBuffer) => {
@@ -182,7 +189,8 @@ export const Recorder = () => {
 		}
 
 		// Start websocket connection
-		websocketRef.current = new WebSocket(`wss://${import.meta.env.VITE_API_BASE_URL}/ws`);
+		const websocket = new WebSocket(`wss://${import.meta.env.VITE_API_BASE_URL}/ws`);
+		websocketRef.current = websocket;
 
 		const onSocketOpen = async () => {
 			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -190,6 +198,7 @@ export const Recorder = () => {
 
 			const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
 			audioContextRef.current = audioContext;
+			
 			const source = audioContext.createMediaStreamSource(stream);
 			sourceRef.current = source;
 
@@ -210,32 +219,28 @@ export const Recorder = () => {
 			setRecordingState(RecordingState.RECORDING);
 		};
 
-		if ("onopen" in websocketRef.current) {
-			websocketRef.current.onopen = () => {
-				console.log("WebSocket connection opened");
-				void onSocketOpen();
-			};
-		}
+		websocket.onopen = () => {
+			console.log("WebSocket connection opened");
+			void onSocketOpen();
+		};
 
-		if ("onmessage" in websocketRef.current) {
-			websocketRef.current.onmessage = (event) => {
-				if (event.data instanceof Blob) {
-					event.data.arrayBuffer().then(processAudioChunk);
-				} else if (event.data instanceof String) {
-					const parsed = JSON.parse(event.data) as {
-						content: string | null;
-						image_url: string | null;
-					};
-					console.log("Parsed final message: ", parsed);
-				}
-			};
-		}
+		websocket.onmessage = (event) => {
+			if (event.data instanceof Blob) {
+				event.data.arrayBuffer().then(processAudioChunk);
+			} else if (typeof event.data === "string") {
+				const parsed = JSON.parse(event.data) as {
+					content: string | null;
+					image_url: string | null;
+				};
+				console.log("Parsed final message: ", parsed);
+			}
+		};
 
-		if ("onclose" in websocketRef.current) {
-			websocketRef.current.onclose = () => {
-				console.log("WebSocket connection closed");
-			};
-		}
+		websocket.onclose = () => {
+			console.log("WebSocket connection closed");
+		};
+
+		startTimeRef.current = Date.now();
 	};
 
 	const stopRecording = () => {
@@ -318,7 +323,7 @@ export const Recorder = () => {
 						<div>{ComponentMap[recordingState]}</div>
 					</span>
 				</div>
-				<p className={"mt-4 text-white text-sm"}>{SubtitleTextMap[recordingState]}</p>
+				<p className={"mt-4 text-white text-sm mx-auto"}>{SubtitleTextMap[recordingState]}</p>
 			</div>
 		)
 	);
