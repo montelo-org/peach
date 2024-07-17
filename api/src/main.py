@@ -8,11 +8,24 @@ from io import BytesIO
 import requests
 from fastapi import FastAPI, Response
 from modal import Image, asgi_app, Secret, gpu, Dict
-from starlette.websockets import WebSocket, WebSocketDisconnect
+from fastapi.websockets import WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.common import app
 
 web_app = FastAPI()
+origins = [
+    "http://localhost:5173",
+]
+
+web_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 whisper_model = "tiny.en"
 secret_name = "peach-secrets"
 globals = Dict.from_name("globals", create_if_missing=True)
@@ -339,8 +352,8 @@ async def transcribe_stream(ws: WebSocket):
             messages = message["messages"]
             break
 
-        # ai_response = ai(full_transcription, messages)
-        ai_response = hardcoded_ai(full_transcription, messages)
+        ai_response = ai(full_transcription, messages)
+        # ai_response = hardcoded_ai(full_transcription, messages)
         print("ai_response: ", ai_response)
         ai_content = ai_response["content"]
 
