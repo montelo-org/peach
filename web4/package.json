@@ -1,5 +1,5 @@
 {
-  "name": "web3",
+  "name": "web4",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,19 +11,9 @@
     "format": "bunx @biomejs/biome format --write src"
   },
   "dependencies": {
-    "@react-three/drei": "^9.108.4",
-    "@react-three/fiber": "^8.16.8",
-    "@tanstack/react-query": "^5.51.3",
-    "@types/three": "^0.166.0",
-    "dayjs": "^1.11.11",
-    "lucide-react": "^0.408.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-hot-toast": "^2.4.1",
-    "react-router-dom": "^6.25.1",
-    "react-social-icons": "^6.16.0",
-    "react-use": "^17.5.0",
-    "three": "^0.166.1"
+    "react-router-dom": "^6.25.1"
   },
   "devDependencies": {
     "@biomejs/biome": "1.8.3",
@@ -31,8 +21,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.39",
-    "tailwindcss": "^3.4.5",
+    "tailwindcss": "^3.4.6",
     "typescript": "^5.2.2",
     "vite": "^5.3.1"
   }

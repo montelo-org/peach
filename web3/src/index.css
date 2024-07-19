@@ -1,3 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.laptop iframe {
+    width: 145px;
+    height: 145px;
+    border-radius: 145px;
+}

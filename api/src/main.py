@@ -7,9 +7,9 @@ from io import BytesIO
 
 import requests
 from fastapi import FastAPI, Response
-from modal import Image, asgi_app, Secret, gpu, Dict
-from fastapi.websockets import WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.websockets import WebSocket, WebSocketDisconnect
+from modal import Image, asgi_app, Secret, gpu, Dict
 
 from src.common import app
 
@@ -26,7 +26,7 @@ web_app.add_middleware(
     allow_headers=["*"],
 )
 
-whisper_model = "tiny.en"
+whisper_model = "small.en"
 secret_name = "peach-secrets"
 globals = Dict.from_name("globals", create_if_missing=True)
 
@@ -57,7 +57,7 @@ image = (
     )
     .apt_install("ffmpeg", "portaudio19-dev")
     .pip_install(
-        "faster-whisper", "pydub", "groq", "elevenlabs", "soundfile", "cartesia"
+        "faster-whisper", "pydub", "groq", "elevenlabs", "soundfile", "cartesia", "openai"
     )
     .run_function(
         download_models, gpu=gpu.A10G(), secrets=[Secret.from_name(secret_name)]
@@ -67,6 +67,7 @@ image = (
 with image.imports():
     import os
     from groq import Groq
+    from openai import OpenAI
     from elevenlabs.client import ElevenLabs
     from cartesia import Cartesia
     from faster_whisper import WhisperModel
@@ -94,18 +95,27 @@ async def transcribe_stream(ws: WebSocket):
         AUDIO_END = "AUDIO_END"
         SEND_MESSAGES = "SEND_MESSAGES"
 
+    openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    ai_model = "llama3-70b-8192"
+    groq_model = "llama3-70b-8192"
+    openai_model = "gpt-4o"
     elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
     cartesia = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
 
     def generate_image(prompt):
         prodia_key = "72a1b2b6-281a-4211-a658-e7c17780c2d2"
-        response = requests.post("https://api.prodia.com/v1/sdxl/generate", json={"prompt": prompt}, headers={
-            "accept": "application/json",
-            "content-type": "application/json",
-            "X-Prodia-Key": prodia_key,
-        })
+        response = requests.post(
+            "https://api.prodia.com/v1/sd/generate",
+            json={
+                "prompt": prompt,
+                "model": "childrensStories_v1ToonAnime.safetensors [2ec7b88b]"
+            },
+            headers={
+                "accept": "application/json",
+                "content-type": "application/json",
+                "X-Prodia-Key": prodia_key,
+            },
+        )
         data = response.json()
         print("data: ", data)
         job = data["job"]
@@ -130,10 +140,41 @@ async def transcribe_stream(ws: WebSocket):
                 return data["imageUrl"]
 
             num_tries += 1
-            time.sleep(1)
+            time.sleep(0.5)
+
+    def would_you_rather(prompt):
+        completion = groq.chat.completions.create(
+            model=groq_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are a fun, creative, person responsible for generating spicy would you rather 
+questions. Come up with a would you rather question for the user, and make it spicy! Make them very short, brief, and
+concise, and straight to the point.
+
+Respond in JSON format: 
+{
+  option1: string,
+  option2: string,
+}
+"""
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            response_format={"type": "json_object"},
+        )
+        return completion.choices[0].message.content
+
+    def get_weather(location):
+        pass
 
     tool_map = dict(
         generate_image=generate_image,
+        would_you_rather=would_you_rather,
+        get_weather=get_weather,
     )
 
     async def audio_receiver(ws: WebSocket, audio_stream: AudioStream) -> None:
@@ -189,30 +230,64 @@ async def transcribe_stream(ws: WebSocket):
         start_time = time.time()
 
         combined_messages = messages + [dict(role="user", content=transcription)]
-        completion = groq.chat.completions.create(
-            model=ai_model,
+        completion = openai.chat.completions.create(
+            model=openai_model,
             messages=combined_messages,
-            # tools=[
-            #     {
-            #         "type": "function",
-            #         "function": {
-            #             "name": "generate_image",
-            #             "description": "DO NOT CALL THIS FUNCTION UNLESS THE USER ASKS TO GENERATE AN IMAGE.",
-            #             "parameters": {
-            #                 "type": "object",
-            #                 "properties": {
-            #                     "prompt": {
-            #                         "type": "string",
-            #                         "description": "The prompt to generate the image. Take the user's prompt and expand on it. Try to formulate 2-3 sentences for best results. Don't say 'generate an image...', just describe the image you'd like to generate.",
-            #                     }
-            #                 },
-            #                 "required": ["prompt"],
-            #             },
-            #         }
-            #     }
-            # ],
-            # tool_choice="auto",
-            max_tokens=200,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "would_you_rather",
+                        "description": "Generates a 'would you rather' question",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "prompt": {
+                                    "type": "string",
+                                    "description": "The prompt to generate the would you rather questions.",
+                                }
+                            },
+                            "required": ["prompt"],
+                        },
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "generate_image",
+                        "description": "Generates an image.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "prompt": {
+                                    "type": "string",
+                                    "description": "The prompt to generate the image. Take the user's prompt and expand on it. Try to formulate 2-3 sentences for best results.",
+                                }
+                            },
+                            "required": ["prompt"],
+                        },
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "description": "Gets the weather for a location.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "location": {
+                                    "type": "string",
+                                    "description": "The location.",
+                                }
+                            },
+                            "required": ["location"],
+                        },
+                    }
+                }
+            ],
+            tool_choice="auto",
+            max_tokens=300,
         )
         end_time = time.time()
         elapsed_time = (end_time - start_time) * 1000
@@ -234,18 +309,26 @@ async def transcribe_stream(ws: WebSocket):
             print("Function response: ", function_response)
 
             if function_name == "generate_image":
-                return dict(content="Here's your image", image_url=function_response)
-
-            # second_response = groq.chat.completions.create(
-            #     model=ai_model,
-            #     messages=messages,
-            # )
-            # second_response_content = second_response.choices[0].message.content
-            # return second_response_content
+                return dict(content="Here's your image", tool_name=function_name, tool_res=function_response)
+            elif function_name == "would_you_rather":
+                parsed = json.loads(function_response)
+                option1 = parsed["option1"]
+                option2 = parsed["option2"]
+                content = f"Would you rather {option1.lower()}, or {option2.lower()}"
+                return dict(content=content, tool_name=function_name, tool_res=parsed)
+            elif function_name == "get_weather":
+                return dict(
+                    content="",
+                    tool_name=function_name,
+                    tool_res=dict(
+                        imageUrl="",
+                        temperature=""
+                    )
+                )
         else:
             print("No tool call")
             content = completion.choices[0].message.content or "Sorry something went wrong."
-            return dict(content=content, image_url=None)
+            return dict(content=content, tool_name=None, tool_res=None)
 
     def hardcoded_ai(transcription: str, messages) -> dict[str, str]:
         time.sleep(0.5)
@@ -352,15 +435,22 @@ async def transcribe_stream(ws: WebSocket):
             messages = message["messages"]
             break
 
-        ai_response = ai(full_transcription, messages)
-        # ai_response = hardcoded_ai(full_transcription, messages)
+        if full_transcription is not None and full_transcription != "":
+            ai_response = ai(full_transcription, messages)
+            # ai_response = hardcoded_ai(full_transcription, messages)
+        else:
+            return
+
         print("ai_response: ", ai_response)
         ai_content = ai_response["content"]
 
         await elevenlabs_speech(ws, ai_content)
         # await cartesia_speech(ws, ai_content)
 
-        await ws.send_json(ai_response)
+        await ws.send_json([
+            dict(role="user", content=full_transcription),
+            dict(role="assistant", **ai_response)
+        ])
     except Exception as e:
         print(f"Error: {e}")
     finally:

@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LoaderCircle, Mic, Square } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { audioWorkletCode } from "./audioWorklet.ts";
 import { RecordingState } from "./RecordingState.ts";
-import { CHANNELS, FRAMES_PER_BUFFER, MESSAGES, SAMPLE_RATE } from "./constants.ts";
+import { CHANNELS, FRAMES_PER_BUFFER, MAX_RECORDING_DURATION, MESSAGES, SAMPLE_RATE, } from "./constants.ts";
 import { useProgress } from "@react-three/drei";
+import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
 
 export const Recorder = () => {
 	// three progress
@@ -25,6 +26,9 @@ export const Recorder = () => {
 		},
 	});
 
+	// change screen
+	const { setUrl } = useScreenContentCtx();
+
 	// recording
 	const [recordingState, setRecordingState] = useState<RecordingState>(RecordingState.IDLING);
 	const streamRef = useRef<MediaStream | null>(null);
@@ -36,6 +40,12 @@ export const Recorder = () => {
 	const gainNodeRef = useRef<GainNode | null>(null);
 	const nextPlayTimeRef = useRef<number>(0);
 	const startTimeRef = useRef(0);
+	const lastScheduledEndTimeRef = useRef<number>(0);
+
+	const closeWebSocket = () => {
+		websocketRef.current?.close();
+		websocketRef.current = null;
+	};
 
 	const closeAudioResources = () => {
 		if (streamingProcessorRef.current && "disconnect" in streamingProcessorRef.current) {
@@ -57,6 +67,25 @@ export const Recorder = () => {
 			audioContextRef.current.close();
 			audioContextRef.current = null;
 		}
+
+		if (gainNodeRef.current && "disconnect" in gainNodeRef.current) {
+			gainNodeRef.current.disconnect();
+			gainNodeRef.current = null;
+		}
+	};
+
+	const resetState = () => {
+		setRecordingState(RecordingState.IDLING);
+		audioBufferRef.current = new Int16Array(0);
+		nextPlayTimeRef.current = audioContextRef.current?.currentTime as number;
+		lastScheduledEndTimeRef.current = audioContextRef.current?.currentTime as number;
+		startTimeRef.current = 0;
+	};
+
+	const comprehensiveCleanup = () => {
+		closeWebSocket();
+		closeAudioResources();
+		resetState();
 	};
 
 	const sendAudioData = (audioData: Int16Array, eventType: string) => {
@@ -90,15 +119,35 @@ export const Recorder = () => {
 
 		audioBufferRef.current = combinedBuffer;
 
-		if (Date.now() - startTimeRef.current > 10000) {
+		if (Date.now() - startTimeRef.current > MAX_RECORDING_DURATION) {
 			console.log("Maximum duration reached, ending recording.");
 			stopRecording();
 		}
 	};
 
+	const playStartSound = () => {
+		const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+		const oscillator = audioContext.createOscillator();
+		const gainNode = audioContext.createGain();
+
+		oscillator.type = "sine";
+		oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // 440 Hz, A4 note
+		gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+		gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.01);
+		gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.5);
+
+		oscillator.connect(gainNode);
+		gainNode.connect(audioContext.destination);
+
+		oscillator.start();
+		oscillator.stop(audioContext.currentTime + 0.5);
+	};
+
 	const schedulePlayback = (audioBuffer: AudioBuffer) => {
-		console.log(`Resampled buffer duration: ${audioBuffer.duration}`);
-		const source = audioContextRef.current?.createBufferSource();
+		const audioContext = audioContextRef.current;
+		if (!audioContext) return;
+
+		const source = audioContext.createBufferSource();
 		source.buffer = audioBuffer;
 		const gainNode = gainNodeRef.current;
 		if (!gainNode) {
@@ -106,15 +155,11 @@ export const Recorder = () => {
 		}
 		source.connect(gainNode);
 
-		const currentTime = audioContextRef.current?.currentTime;
-		if (!currentTime) {
-			return;
-		}
+		const currentTime = audioContext.currentTime;
 		const startTime = Math.max(currentTime, nextPlayTimeRef.current);
 		source.start(startTime);
 		nextPlayTimeRef.current = startTime + audioBuffer.duration;
-
-		console.log(`Scheduled playback at: ${startTime}, duration: ${audioBuffer.duration}`);
+		lastScheduledEndTimeRef.current = nextPlayTimeRef.current;
 
 		// Cleanup: remove the source node when it's finished playing
 		source.onended = () => {
@@ -140,13 +185,11 @@ export const Recorder = () => {
 			initAudioPlayback();
 		}
 
+		const audioContext = audioContextRef.current;
+		if (!audioContext) return;
+
 		const pcmData = new Int16Array(chunk);
-		console.log(`Received chunk length: ${pcmData.length}`);
-		const audioBuffer = audioContextRef.current?.createBuffer(
-			CHANNELS,
-			pcmData.length,
-			SAMPLE_RATE,
-		);
+		const audioBuffer = audioContext.createBuffer(CHANNELS, pcmData.length, SAMPLE_RATE);
 		const channelData = audioBuffer.getChannelData(0);
 
 		// Convert Int16Array to Float32Array
@@ -156,25 +199,30 @@ export const Recorder = () => {
 
 		// If the audio context's sample rate doesn't match the incoming audio,
 		// resample the audio before scheduling playback
-		if (audioContextRef.current?.sampleRate !== SAMPLE_RATE) {
-			resampleAudio(audioBuffer, audioContextRef.current?.sampleRate).then(schedulePlayback);
+		if (audioContext.sampleRate !== SAMPLE_RATE) {
+			resampleAudio(audioBuffer, audioContext.sampleRate).then(schedulePlayback);
 		} else {
 			schedulePlayback(audioBuffer);
 		}
 
 		if (recordingState !== RecordingState.PLAYBACK) {
 			setRecordingState(RecordingState.PLAYBACK);
+			checkPlaybackFinished();
 		}
 	};
 
 	const initAudioPlayback = () => {
-		if (!audioContextRef.current) {
-			audioContextRef.current = new AudioContext();
-			gainNodeRef.current = audioContextRef.current?.createGain();
-			if ("connect" in gainNodeRef.current) {
-				gainNodeRef.current.connect(audioContextRef.current?.destination);
-			}
-		}
+		audioContextRef.current?.close();
+		const audioContext = new AudioContext();
+		audioContextRef.current = audioContext;
+
+		const gainNode = audioContext.createGain();
+		gainNodeRef.current = gainNode;
+		gainNode.connect(audioContext.destination);
+
+		// Reset timing references
+		nextPlayTimeRef.current = audioContext.currentTime;
+		lastScheduledEndTimeRef.current = audioContext.currentTime;
 	};
 
 	const startRecording = async () => {
@@ -198,7 +246,7 @@ export const Recorder = () => {
 
 			const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
 			audioContextRef.current = audioContext;
-			
+
 			const source = audioContext.createMediaStreamSource(stream);
 			sourceRef.current = source;
 
@@ -217,6 +265,7 @@ export const Recorder = () => {
 			};
 
 			setRecordingState(RecordingState.RECORDING);
+			playStartSound();
 		};
 
 		websocket.onopen = () => {
@@ -228,11 +277,33 @@ export const Recorder = () => {
 			if (event.data instanceof Blob) {
 				event.data.arrayBuffer().then(processAudioChunk);
 			} else if (typeof event.data === "string") {
-				const parsed = JSON.parse(event.data) as {
-					content: string | null;
-					image_url: string | null;
-				};
-				console.log("Parsed final message: ", parsed);
+				const parsed = JSON.parse(event.data) as Array<{
+					role?: string | null;
+					content?: string | null;
+					tool_name?: string | null;
+					tool_res?: unknown;
+				}>;
+
+				console.log("Message: ", parsed);
+
+				for (const p of parsed) {
+					if (p.role && p.content) {
+						MESSAGES.push({
+							role: p.role,
+							content: p.content,
+						});
+					}
+
+					if (p.role === "assistant") {
+						if (p.tool_name === "would_you_rather") {
+							const newUrl = `${import.meta.env.VITE_SCREEN_BASE_URL}/would-you-rather?option1=${encodeURIComponent(p.tool_res.option1)}&option2=${encodeURIComponent(p.tool_res.option2)}`;
+							setUrl(newUrl);
+						} else if (p.tool_name === "generate_image") {
+							const newUrl = `${import.meta.env.VITE_SCREEN_BASE_URL}/generate_image?imageUrl=${encodeURIComponent(p.tool_res as string)}`;
+							setUrl(newUrl);
+						}
+					}
+				}
 			}
 		};
 
@@ -266,6 +337,18 @@ export const Recorder = () => {
 		audioBufferRef.current = new Int16Array(0);
 	};
 
+	const checkPlaybackFinished = useCallback(() => {
+		const audioContext = audioContextRef.current;
+		if (!audioContext) return;
+
+		const currentTime = audioContext.currentTime;
+		if (currentTime >= lastScheduledEndTimeRef.current) {
+			setRecordingState(RecordingState.IDLING);
+		} else {
+			requestAnimationFrame(checkPlaybackFinished);
+		}
+	}, []);
+
 	const handleClick = () => {
 		const handlerMap: Record<RecordingState, () => void> = {
 			[RecordingState.IDLING]: () => {
@@ -281,7 +364,7 @@ export const Recorder = () => {
 				return;
 			},
 			[RecordingState.PLAYBACK]: () => {
-				// TODO stop playback
+				comprehensiveCleanup();
 				return;
 			},
 		};
@@ -309,9 +392,15 @@ export const Recorder = () => {
 	const cursorNotAllowed =
 		recordingState === RecordingState.INITIALIZING || recordingState === RecordingState.PROCESSING;
 
+	useEffect(() => {
+		return () => {
+			comprehensiveCleanup();
+		};
+	}, []);
+
 	return (
 		showComponents && (
-			<div className={"absolute bottom-16 left-1/2 transform -translate-x-1/2"}>
+			<div className={"absolute bottom-12 left-1/2 transform -translate-x-1/2"}>
 				<div
 					className={`w-16 h-16 rounded-full select-none transition-all duration-100 mx-auto
 				[box-shadow:0_8px_0_0_#f81b22,0_13px_0_0_#f7404641] border-[1px] border-red-400
