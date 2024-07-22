@@ -1,7 +1,7 @@
+import { type Dispatch, type FC, type SetStateAction, useEffect, useRef } from "react";
 import { Screen } from "./Screen.tsx";
-import { Environment } from "@react-three/drei";
+import { Environment, useProgress } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useRef } from "react";
 
 interface MousePosition {
 	x: number;
@@ -35,7 +35,22 @@ const CameraController = () => {
 	return null;
 };
 
-export const ModelsWrapper = () => {
+const LoadingManager = ({ setIsLoading }) => {
+	const { progress } = useProgress();
+
+	useEffect(() => {
+		setIsLoading(progress !== 100);
+	}, [progress, setIsLoading]);
+
+	return null;
+};
+
+type ModelsWrapperProps = {
+	showiFrame: boolean;
+	setIsLoading: Dispatch<SetStateAction<boolean>>;
+};
+
+export const ModelsWrapper: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoading }) => {
 	return (
 		<Canvas
 			camera={{
@@ -45,8 +60,9 @@ export const ModelsWrapper = () => {
 				position: [0, 0, 3],
 			}}
 		>
+			<LoadingManager setIsLoading={setIsLoading} />
 			<CameraController />
-			<Screen />
+			<Screen showiFrame={showiFrame} />
 			<Environment preset="sunset" background />
 		</Canvas>
 	);

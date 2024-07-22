@@ -9,7 +9,7 @@ export const PreOrderBtn = () => {
 			window.open("https://buy.stripe.com/28oaF245b0nB1q0288", "_blank");
 		}, 100);
 	};
-	
+
 	return (
 		showComponents && (
 			<div
