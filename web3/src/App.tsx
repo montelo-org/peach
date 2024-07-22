@@ -65,7 +65,7 @@ function App() {
 	return (
 		<QueryClientProvider client={queryClient}>
 			<ScreenContentProvider>
-				<main className="w-[100vw] h-[100vh] relative">
+				<main className="w-[100dvw] h-[100dvh] relative">
 					<ModelsWrapper showiFrame={showiFrame} setIsLoading={setIsLoadingModel} />
 					<div className={`transition-opacity duration-200 ${isLoading || isTransitioning ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
 						<Loader />
