@@ -1,16 +1,18 @@
 import { Html, useGLTF } from "@react-three/drei";
 import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
+import { useMedia } from "react-use";
 
 export const Screen = () => {
 	const { url } = useScreenContentCtx();
 	const { scene } = useGLTF("peach.glb");
+	const isMobile = useMedia("(max-width: 768px)");
 	
 	return (
 		<primitive
 			object={scene}
 			position={[0, -0.5, 0]}
 			rotation={[0.05, 0, 0]}
-			scale={10}
+			scale={isMobile ? 8: 10}
 		>
 			<Html
 				transform

@@ -3,12 +3,11 @@ import { Recorder } from "./recorder/Recorder.tsx";
 import { toast, Toaster } from "react-hot-toast";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./queryClient.ts";
-import { Environment, OrbitControls, useProgress } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
+import { useProgress } from "@react-three/drei";
 import { useEffect } from "react";
 import { useLocalStorage } from "react-use";
-import { Screen } from "./models/Screen.tsx";
 import { ScreenContentProvider } from "./contexts/ScreenContentCtx.tsx";
+import { ModelsWrapper } from "./models/ModelsWrapper.tsx";
 
 function App() {
 	// three progress
@@ -38,23 +37,7 @@ function App() {
 		<QueryClientProvider client={queryClient}>
 			<ScreenContentProvider>
 				<main className="w-[100vw] h-[100vh] relative">
-					<Canvas
-						camera={{
-							fov: 50,
-							near: 0.1,
-							far: 2000,
-							position: [0, 0, 3],
-						}}
-					>
-						<Screen />
-						<Environment preset="sunset" background />
-						<OrbitControls
-							enableZoom={false}
-							enablePan={false}
-							minPolarAngle={Math.PI / 2.5}
-							maxPolarAngle={Math.PI / 1.5}
-						/>
-					</Canvas>
+					<ModelsWrapper />
 					<PreOrderBtn />
 					<Recorder />
 					<Toaster />

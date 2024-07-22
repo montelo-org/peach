@@ -4,8 +4,6 @@ export const ScreenContentCtx = createContext({});
 
 export const ScreenContentProvider = ({ children }) => {
 	const [url, setUrl] = useState(import.meta.env.VITE_SCREEN_BASE_URL);
-
-	console.log("url: ", url)
 	
 	return (
 		<ScreenContentCtx.Provider value={{ url, setUrl }}>
