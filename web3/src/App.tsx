@@ -67,10 +67,10 @@ function App() {
 			<ScreenContentProvider>
 				<main className="w-[100dvw] h-[100dvh] relative">
 					<ModelsWrapper showiFrame={showiFrame} setIsLoading={setIsLoadingModel} />
-					<div className={`transition-opacity duration-200 ${isLoading || isTransitioning ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+					<div className={`transition-opacity duration-350 ${isLoading || isTransitioning ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
 						<Loader />
 					</div>
-					<div className={`transition-opacity duration-200 ${!isLoading && !isTransitioning ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+					<div className={`transition-opacity duration-350 ${!isLoading && !isTransitioning ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
 						<PreOrderBtn />
 						<Recorder />
 					</div>

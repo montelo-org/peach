@@ -1,1 +1,1 @@
-export const LOADING_TIMER_DURATION = 1500;
+export const LOADING_TIMER_DURATION = 1000;
