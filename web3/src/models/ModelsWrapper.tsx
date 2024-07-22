@@ -35,7 +35,9 @@ const CameraController = () => {
 	return null;
 };
 
-const LoadingManager = ({ setIsLoading }) => {
+const LoadingManager: FC<{ setIsLoading: Dispatch<SetStateAction<boolean>> }> = ({
+	setIsLoading,
+}) => {
 	const { progress } = useProgress();
 
 	useEffect(() => {
