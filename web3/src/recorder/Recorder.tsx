@@ -92,6 +92,7 @@ export const Recorder = () => {
 		if (websocketRef.current && websocketRef.current?.readyState === WebSocket.OPEN) {
 			const arrayBuffer = audioData.buffer;
 			const uint8Array = new Uint8Array(arrayBuffer);
+			// @ts-ignore
 			const base64Audio = btoa(String.fromCharCode.apply(null, uint8Array));
 			const message = JSON.stringify({
 				event: eventType,
@@ -126,6 +127,7 @@ export const Recorder = () => {
 	};
 
 	const playStartSound = () => {
+		// @ts-ignore
 		const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 		const oscillator = audioContext.createOscillator();
 		const gainNode = audioContext.createGain();
@@ -281,7 +283,8 @@ export const Recorder = () => {
 					role?: string | null;
 					content?: string | null;
 					tool_name?: string | null;
-					tool_res?: unknown;
+					// biome-ignore lint/suspicious/noExplicitAny: could be anything
+					tool_res?: any;
 				}>;
 
 				console.log("Message: ", parsed);

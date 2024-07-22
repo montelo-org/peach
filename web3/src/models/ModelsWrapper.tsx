@@ -3,12 +3,17 @@ import { Environment } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 
+interface MousePosition {
+	x: number;
+	y: number;
+}
+
 const CameraController = () => {
 	const { camera } = useThree();
-	const mouseRef = useRef({ x: 0, y: 0 });
+	const mouseRef = useRef<MousePosition>({ x: 0, y: 0 });
 
 	useEffect(() => {
-		const handleMouseMove = (event) => {
+		const handleMouseMove = (event: MouseEvent) => {
 			mouseRef.current = {
 				x: (event.clientX / window.innerWidth) * 2 - 1,
 				y: -(event.clientY / window.innerHeight) * 2 + 1,
