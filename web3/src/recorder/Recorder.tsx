@@ -211,6 +211,7 @@ export const Recorder = () => {
 			checkPlaybackFinished();
 		}
 	};
+
 	const initAudioPlayback = () => {
 		audioContextRef.current?.close();
 		const audioContext = new AudioContext();
@@ -401,7 +402,7 @@ export const Recorder = () => {
 
 	return (
 		showComponents && (
-			<div className={"absolute bottom-12 left-1/2 transform -translate-x-1/2"}>
+			<div className={"absolute bottom-8 left-1/2 transform -translate-x-1/2"}>
 				<div
 					className={`w-16 h-16 rounded-full select-none transition-all duration-100 mx-auto
 				[box-shadow:0_8px_0_0_#f81b22,0_13px_0_0_#f7404641] border-[1px] border-red-400
@@ -413,7 +414,7 @@ export const Recorder = () => {
 						<div>{ComponentMap[recordingState]}</div>
 					</span>
 				</div>
-				<p className={"mt-4 text-white text-sm mx-auto"}>{SubtitleTextMap[recordingState]}</p>
+				<p className={"mt-4 text-white mx-auto font-medium"}>{SubtitleTextMap[recordingState]}</p>
 			</div>
 		)
 	);
