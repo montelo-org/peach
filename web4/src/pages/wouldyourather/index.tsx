@@ -13,10 +13,10 @@ export default function WouldyouratherPage() {
 	return (
 		<main className="w-screen h-screen flex flex-col relative">
 			<div className="flex-1 bg-blue-500 flex items-center justify-center">
-				<p className="text-white text-center px-4 font-medium leading-none text-xs w-[90%]">{option1} hello world hows it going hello world hows it going</p>
+				<p className="text-white text-center px-4 font-medium leading-none text-xs w-[90%]">{option1}</p>
 			</div>
 			<div className="flex-1 bg-red-500 flex items-center justify-center">
-				<p className="text-white text-center px-4 font-medium leading-none text-xs w-[90%]">{option2} hello world hows it going hello world hows it going</p>
+				<p className="text-white text-center px-4 font-medium leading-none text-xs w-[90%]">{option2}</p>
 			</div>
 		</main>
 	);
