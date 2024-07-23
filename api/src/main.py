@@ -16,6 +16,8 @@ from src.common import app
 web_app = FastAPI()
 origins = [
     "http://localhost:5173",
+    "https://getpeachpod.pages.dev",
+    "https://getpeachpod.com"
 ]
 
 web_app.add_middleware(

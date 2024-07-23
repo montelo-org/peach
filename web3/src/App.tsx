@@ -18,15 +18,6 @@ function App() {
 	const isLoading = isLoadingModel || isTimerRunning;
 	const showiFrame = !isTransitioning && !isLoading;
 
-	console.log(
-		"isTimerRunning",
-		isTimerRunning,
-		"; isLoadingModel",
-		isLoadingModel,
-		"; isLoading",
-		isLoading,
-	);
-
 	const startTimer: EffectCallback = () => {
 		const timer = setTimeout(() => {
 			setIsTimerRunning(false);
@@ -39,9 +30,9 @@ function App() {
 	const showToast: EffectCallback = () => {
 		if (!isLoading) {
 			const now = new Date().getTime();
-			const fiveMinutesAgo = now - 5 * 60 * 1000;
+			const thirtyMinutesAgo = now - 30 * 60 * 1000;
 
-			if (!toastLastShown || Number.parseInt(toastLastShown) < fiveMinutesAgo) {
+			if (!toastLastShown || Number.parseInt(toastLastShown) < thirtyMinutesAgo) {
 				toast("We're running on limited GPUs. Sorry if things get slow or delayed.", {
 					id: "1",
 					duration: 4000,
@@ -67,10 +58,10 @@ function App() {
 			<ScreenContentProvider>
 				<main className="w-[100dvw] h-[100dvh] relative">
 					<ModelsWrapper showiFrame={showiFrame} setIsLoading={setIsLoadingModel} />
-					<div className={`transition-opacity duration-350 ${isLoading || isTransitioning ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+					<div className={`transition-opacity duration-700 ${isLoading || isTransitioning ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
 						<Loader />
 					</div>
-					<div className={`transition-opacity duration-350 ${!isLoading && !isTransitioning ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+					<div className={`transition-opacity duration-700 ${!isLoading && !isTransitioning ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
 						<PreOrderBtn />
 						<Recorder />
 					</div>

@@ -3,13 +3,7 @@ import { LoaderCircle, Mic, Square } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { audioWorkletCode } from "./audioWorklet.ts";
 import { RecordingState } from "./RecordingState.ts";
-import {
-	CHANNELS,
-	FRAMES_PER_BUFFER,
-	MAX_RECORDING_DURATION,
-	MESSAGES,
-	SAMPLE_RATE,
-} from "./constants.ts";
+import { CHANNELS, FRAMES_PER_BUFFER, MAX_RECORDING_DURATION, MESSAGES, SAMPLE_RATE, } from "./constants.ts";
 import { useProgress } from "@react-three/drei";
 import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
 
@@ -177,10 +171,13 @@ export const Recorder = () => {
 
 	const resampleAudio = async (
 		audioBuffer: AudioBuffer,
-		newSampleRate: number | undefined,
+		newSampleRate: number,
 	): Promise<AudioBuffer> => {
-		const sampleRate = newSampleRate || SAMPLE_RATE;
-		const ctx = new OfflineAudioContext(CHANNELS, audioBuffer.duration * sampleRate, sampleRate);
+		const ctx = new OfflineAudioContext(
+			CHANNELS,
+			audioBuffer.duration * newSampleRate,
+			newSampleRate,
+		);
 		const source = ctx.createBufferSource();
 		source.buffer = audioBuffer;
 		source.connect(ctx.destination);
@@ -188,7 +185,7 @@ export const Recorder = () => {
 		return ctx.startRendering();
 	};
 
-	const processAudioChunk = (chunk: ArrayBuffer) => {
+	const processAudioChunk = async (chunk: ArrayBuffer) => {
 		if (!audioContextRef.current) {
 			initAudioPlayback();
 		}
@@ -205,20 +202,15 @@ export const Recorder = () => {
 			channelData[i] = pcmData[i] / 32768.0;
 		}
 
-		// If the audio context's sample rate doesn't match the incoming audio,
-		// resample the audio before scheduling playback
-		if (audioContext.sampleRate !== SAMPLE_RATE) {
-			resampleAudio(audioBuffer, audioContext.sampleRate).then(schedulePlayback);
-		} else {
-			schedulePlayback(audioBuffer);
-		}
+		// Always resample the audio to match the device's sample rate
+		const resampledBuffer = await resampleAudio(audioBuffer, audioContext.sampleRate);
+		schedulePlayback(resampledBuffer);
 
 		if (recordingState !== RecordingState.PLAYBACK) {
 			setRecordingState(RecordingState.PLAYBACK);
 			checkPlaybackFinished();
 		}
 	};
-
 	const initAudioPlayback = () => {
 		audioContextRef.current?.close();
 		const audioContext = new AudioContext();
