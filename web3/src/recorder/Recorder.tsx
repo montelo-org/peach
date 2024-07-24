@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
 import { LoaderCircle, Mic, Square } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { audioWorkletCode } from "./audioWorklet.ts";
@@ -357,7 +357,10 @@ export const Recorder = () => {
 		}
 	}, []);
 
-	const handleClick = () => {
+	const handleClick: MouseEventHandler = (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		
 		const handlerMap: Record<RecordingState, () => void> = {
 			[RecordingState.IDLING]: () => {
 				void startRecording();
