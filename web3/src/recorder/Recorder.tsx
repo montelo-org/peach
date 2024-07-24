@@ -3,7 +3,13 @@ import { LoaderCircle, Mic, Square } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { audioWorkletCode } from "./audioWorklet.ts";
 import { RecordingState } from "./RecordingState.ts";
-import { CHANNELS, FRAMES_PER_BUFFER, MAX_RECORDING_DURATION, MESSAGES, SAMPLE_RATE, } from "./constants.ts";
+import {
+	CHANNELS,
+	FRAMES_PER_BUFFER,
+	MAX_RECORDING_DURATION,
+	MESSAGES,
+	SAMPLE_RATE,
+} from "./constants.ts";
 import { useProgress } from "@react-three/drei";
 import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
 
