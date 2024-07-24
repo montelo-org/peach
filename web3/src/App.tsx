@@ -7,7 +7,7 @@ import { Recorder } from "./recorder/Recorder.tsx";
 import { queryClient } from "./queryClient.ts";
 import { ScreenContentProvider } from "./contexts/ScreenContentCtx.tsx";
 import { Loader } from "./components/Loader.tsx";
-import { ModelsWrapper } from "./models/ModelsWrapper.tsx";
+import { SceneContainer } from "./models/SceneContainer.tsx";
 import { LOADING_TIMER_DURATION } from "./constants.ts";
 
 function App() {
@@ -57,7 +57,7 @@ function App() {
 		<QueryClientProvider client={queryClient}>
 			<ScreenContentProvider>
 				<main className="w-[100dvw] h-[100dvh] relative">
-					<ModelsWrapper showiFrame={showiFrame} setIsLoading={setIsLoadingModel} />
+					<SceneContainer showiFrame={showiFrame} setIsLoading={setIsLoadingModel} />
 					<div
 						className={`transition-opacity duration-700 ${isLoading || isTransitioning ? "opacity-100" : "opacity-0 pointer-events-none"}`}
 					>

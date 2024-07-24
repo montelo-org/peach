@@ -13,7 +13,7 @@ type ModelsWrapperProps = {
 	setIsLoading: Dispatch<SetStateAction<boolean>>;
 };
 
-export const ModelsWrapper: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoading }) => {
+export const SceneContainer: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoading }) => {
 	const { url } = useScreenContentCtx();
 	const isMobile = useMedia("(max-width: 768px)");
 
@@ -28,9 +28,10 @@ export const ModelsWrapper: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoading
 					isMobile ? MOBILE_INITIAL_Y : INITIAL_Y,
 					isMobile ? MOBILE_INITIAL_Z : INITIAL_Z,
 				],
+				rotation: [0.1, -1.6, 0.12],
 			}}
 		>
-			<pointLight position={[INITIAL_X, INITIAL_Y, INITIAL_Z]} color={"#fcf3dc"} intensity={5} />
+			<pointLight position={[INITIAL_X, INITIAL_Y, INITIAL_Z]} color={"#fcf3dc"} intensity={4} />
 			<Environment preset={"dawn"} />
 			<LoadingManager setIsLoading={setIsLoading} />
 			<Apartment />
@@ -38,9 +39,9 @@ export const ModelsWrapper: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoading
 			<Html
 				transform
 				wrapperClass={"laptop"}
-				distanceFactor={isMobile ? 0.373 : 0.373}
-				position={isMobile ? [-2, 0.494, -0.163] : [-2, 0.491, -0.164]}
-				rotation={[0, Math.PI / 2, 0]}
+				distanceFactor={isMobile ? 0.373 : 0.44}
+				position={isMobile ? [-2, 0.65, -0.26] : [-2, 0.64, -0.258]}
+				rotation={[0, -Math.PI / 2, 0]}
 			>
 				{showiFrame && <iframe src={url} title={"Screen base url"} />}
 			</Html>
