@@ -10,4 +10,4 @@ export const MOBILE_INITIAL_Y = 0.87;
 export const MOBILE_INITIAL_Z = -0.29;
 export const MOBILE_ZOOMED_X = -2.52;
 export const MOBILE_ZOOMED_Y = 0.69;
-export const MOBILE_ZOOMED_Z = -0.276;
+export const MOBILE_ZOOMED_Z = -0.272;

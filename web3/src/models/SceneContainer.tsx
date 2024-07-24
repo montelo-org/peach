@@ -7,6 +7,7 @@ import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
 import { Apartment } from "./Apartment.tsx";
 import { INITIAL_X, INITIAL_Y, INITIAL_Z, MOBILE_INITIAL_X, MOBILE_INITIAL_Y, MOBILE_INITIAL_Z, } from "./constants.ts";
 import { CameraController } from "./CameraController.tsx";
+import { useState } from "react";
 
 type ModelsWrapperProps = {
 	showiFrame: boolean;
@@ -16,13 +17,14 @@ type ModelsWrapperProps = {
 export const SceneContainer: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoading }) => {
 	const { url } = useScreenContentCtx();
 	const isMobile = useMedia("(max-width: 768px)");
+	const [isZoomedIn, setIsZoomedIn] = useState(false);
 
 	return (
 		<Canvas
 			camera={{
 				fov: isMobile ? 100 : 60,
 				near: 0.1,
-				far: 100,
+				far: 1000,
 				position: [
 					isMobile ? MOBILE_INITIAL_X : INITIAL_X,
 					isMobile ? MOBILE_INITIAL_Y : INITIAL_Y,
@@ -35,12 +37,12 @@ export const SceneContainer: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoadin
 			<Environment preset={"dawn"} />
 			<LoadingManager setIsLoading={setIsLoading} />
 			<Apartment />
-			<CameraController />
+			<CameraController isZoomedIn={isZoomedIn} setIsZoomedIn={setIsZoomedIn} />
 			<Html
 				transform
 				wrapperClass={"laptop"}
-				distanceFactor={isMobile ? 0.373 : 0.44}
-				position={isMobile ? [-2, 0.65, -0.26] : [-2, 0.64, -0.258]}
+				distanceFactor={isMobile ? isZoomedIn ? 0.8 : 0.4 : 0.44}
+				position={isMobile ? [-2, 0.977, -0.43] : [-2.336, 0.672, -0.266]}
 				rotation={[0, -Math.PI / 2, 0]}
 			>
 				{showiFrame && <iframe src={url} title={"Screen base url"} />}

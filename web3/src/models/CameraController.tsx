@@ -1,5 +1,5 @@
-import type { FC } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { Dispatch, FC, SetStateAction } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -18,9 +18,13 @@ import {
 } from "./constants.ts";
 import { useMedia } from "react-use";
 
-export const CameraController: FC = () => {
+type CameraControllerProps = {
+	isZoomedIn: boolean;
+	setIsZoomedIn: Dispatch<SetStateAction<boolean>>;
+};
+
+export const CameraController: FC<CameraControllerProps> = ({ isZoomedIn, setIsZoomedIn }) => {
 	const { camera, size } = useThree();
-	const [isZoomedIn, setIsZoomedIn] = useState(false);
 	const isMobile = useMedia("(max-width: 768px)");
 	const initialPosition = useRef(new THREE.Vector3());
 	const initialRotation = useRef(new THREE.Euler());
@@ -32,15 +36,17 @@ export const CameraController: FC = () => {
 	const interactionDelta = useRef({ x: 0, y: 0 });
 	const currentVelocity = useRef(new THREE.Vector2(0, 0));
 	const interactionOffset = useRef(new THREE.Vector3());
-	const interactionThreshold = isMobile ? 10 : 5; // pixels, increased for mobile
+	const interactionThreshold = 5;
 	const maxRotation = Math.PI / 8; // 22.5 degrees in radians
-	const sensitivity = isMobile ? 0.1 : 0.3; // Reduced sensitivity for mobile
-	const deadZoneRadius = isMobile ? 0.2 : 0.1; // Increased dead zone for mobile
-	const smoothingFactor = isMobile ? 0.03 : 0.05; // Reduced smoothing for mobile
+	const sensitivity = isMobile ? 0.05 : 0.3; // Further reduced sensitivity for mobile
+	const deadZoneRadius = 0.1; // Reduced dead zone for mobile
+	const smoothingFactor = isMobile ? 0.1 : 0.05; // Increased smoothing for mobile
+	const lastTapTime = useRef(0);
+	const doubleTapDelay = 300; // milliseconds
 
 	const updateCameraPosition = useCallback(() => {
-		const zoomLerp = isMobile ? 0.05 : 0.1; // Slower zoom for mobile
-		const interactionLerp = isMobile ? 0.005 : 0.01; // Slower interaction for mobile
+		const zoomLerp = isMobile ? 0.15 : 0.1;
+		const interactionLerp = isMobile ? 0.05 : 0.01;
 		const velocityDecay = 0.95;
 
 		// Zoom-based movement
@@ -69,8 +75,8 @@ export const CameraController: FC = () => {
 		);
 		offsetPosition.current.lerp(targetPosition.sub(initialPosition.current), zoomLerp);
 
-		// Interaction-based movement
-		if (!isInteracting.current) {
+		// Interaction-based movement (only when not zoomed in)
+		if (!isInteracting.current && !isZoomedIn) {
 			const interactionX = (interactionPosition.current.x / size.width) * 2 - 1;
 			const interactionY = -(interactionPosition.current.y / size.height) * 2 + 1;
 
@@ -78,7 +84,7 @@ export const CameraController: FC = () => {
 				interactionX * interactionX + interactionY * interactionY,
 			);
 			if (distanceFromCenter > deadZoneRadius) {
-				const multiplier = isZoomedIn ? 0.02 : 0.2;
+				const multiplier = 0.2;
 				const adjustedMultiplier = multiplier * sensitivity;
 
 				const movementX = interactionX * adjustedMultiplier;
@@ -93,10 +99,10 @@ export const CameraController: FC = () => {
 			}
 		}
 
-		// Interaction-based rotation with inertia
-		if (isInteracting.current) {
-			const targetVelocityX = interactionDelta.current.x * 0.0002; // Further reduced for mobile
-			const targetVelocityY = interactionDelta.current.y * 0.0002;
+		// Interaction-based rotation with inertia (only when not zoomed in)
+		if (isInteracting.current && !isZoomedIn) {
+			const targetVelocityX = interactionDelta.current.x * 0.0001;
+			const targetVelocityY = interactionDelta.current.y * 0.0001;
 
 			currentVelocity.current.x += (targetVelocityX - currentVelocity.current.x) * interactionLerp;
 			currentVelocity.current.y += (targetVelocityY - currentVelocity.current.y) * interactionLerp;
@@ -123,7 +129,7 @@ export const CameraController: FC = () => {
 		camera.position
 			.copy(initialPosition.current)
 			.add(offsetPosition.current)
-			.add(interactionOffset.current);
+			.add(isZoomedIn ? new THREE.Vector3() : interactionOffset.current);
 		camera.rotation.copy(initialRotation.current);
 		camera.rotateX(offsetRotation.current.x);
 		camera.rotateY(offsetRotation.current.y);
@@ -164,8 +170,20 @@ export const CameraController: FC = () => {
 				(clientX - interactionStart.current.x) ** 2 + (clientY - interactionStart.current.y) ** 2,
 			);
 
+			const currentTime = new Date().getTime();
+			const tapTimeDiff = currentTime - lastTapTime.current;
+
 			if (interactionDistance < interactionThreshold) {
-				setIsZoomedIn((prev) => !prev);
+				if (isMobile) {
+					// For mobile, only toggle zoom on double tap
+					if (tapTimeDiff < doubleTapDelay) {
+						setIsZoomedIn((prev) => !prev);
+					}
+					lastTapTime.current = currentTime;
+				} else {
+					// For desktop, toggle zoom on single click
+					setIsZoomedIn((prev) => !prev);
+				}
 			}
 
 			isInteracting.current = false;
@@ -187,7 +205,7 @@ export const CameraController: FC = () => {
 			window.removeEventListener("touchmove", handleInteractionMove);
 			window.removeEventListener("touchend", handleInteractionEnd);
 		};
-	}, []);
+	}, [isMobile]);
 
 	useEffect(() => {
 		initialPosition.current.copy(camera.position);
