@@ -10,7 +10,7 @@ body {
 .laptop iframe {
     width: 140px;
     height: 140px;
-    border-radius: 140px;
+    border-radius: 70px;
 }
 
 .loader-container {

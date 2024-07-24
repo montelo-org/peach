@@ -7,7 +7,7 @@ import { useGLTF } from "@react-three/drei";
 
 export function Scene(props: JSX.IntrinsicElements["group"]) {
 	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-	const { nodes, materials } = useGLTF("/scene.glb") as any;
+	const { nodes, materials } = useGLTF("https://r2.getpeachpod.com/scene.glb") as any;
 	return (
 		<group {...props} dispose={null}>
 			<mesh geometry={nodes.Plane001.geometry} material={materials["Material.001"]} />
