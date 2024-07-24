@@ -1,8 +1,15 @@
-import { useGLTF } from "@react-three/drei";
+import { Html, useGLTF } from "@react-three/drei";
+import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
 
-export function Apartment(props: JSX.IntrinsicElements["group"]) {
+export function Apartment(
+	props: JSX.IntrinsicElements["group"] & {
+		showiFrame: boolean;
+		isZoomedIn: boolean;
+	},
+) {
 	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 	const { nodes, materials } = useGLTF("https://r2.getpeachpod.com/apartment.glb") as any;
+	const { url } = useScreenContentCtx();
 
 	return (
 		<>
@@ -216,6 +223,14 @@ export function Apartment(props: JSX.IntrinsicElements["group"]) {
 					<mesh geometry={nodes.Cube001.geometry} material={materials["Plastic_black glossy"]} />
 					<mesh geometry={nodes.Cube001_1.geometry} material={materials.Screen} />
 					<mesh geometry={nodes.Cube001_2.geometry} material={materials.Metal_aluminum} />
+					<Html
+						// transform
+						wrapperClass="laptop"
+						distanceFactor={1}
+						position={[-0.07, 0.125, -0.2]}
+					>
+						{props.showiFrame && <iframe src={url} title="Screen base url" />}
+					</Html>
 				</group>
 				<group position={[-2.336, 0.591, -0.266]} rotation={[0, -1.567, 0]}>
 					<mesh

@@ -7,10 +7,19 @@ body {
     overflow: hidden;
 }
 
+/* prevent selection */
+* {
+    -webkit-touch-callout:none;
+    -webkit-user-select:none;
+    -moz-user-select:none;
+    -ms-user-select:none;
+    user-select:none;
+}
+
 .laptop iframe {
-    width: 140px;
-    height: 140px;
-    border-radius: 70px;
+    width: 100px;
+    height: 100px;
+    border-radius: 50px;
 }
 
 .loader-container {
