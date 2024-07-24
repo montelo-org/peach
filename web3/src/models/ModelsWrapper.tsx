@@ -12,7 +12,7 @@ type ModelsWrapperProps = {
 	setIsLoading: Dispatch<SetStateAction<boolean>>;
 };
 
-export const ModelsWrapper: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoading }) => {
+export const ModelsWrapper: FC<ModelsWrapperProps> = ({ setIsLoading }) => {
 	const isMobile = useMedia("(max-width: 768px)");
 
 	return (
