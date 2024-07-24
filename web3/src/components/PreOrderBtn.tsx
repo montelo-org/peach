@@ -1,4 +1,5 @@
 import { useProgress } from "@react-three/drei";
+import type { MouseEventHandler } from "react";
 
 export const PreOrderBtn = () => {
 	const { progress } = useProgress();
@@ -8,6 +9,11 @@ export const PreOrderBtn = () => {
 		setTimeout(() => {
 			window.open("https://buy.stripe.com/28oaF245b0nB1q0288", "_blank");
 		}, 100);
+	};
+
+	const handleClick: MouseEventHandler = (e) => {
+		e.preventDefault();
+		e.stopPropagation();
 	};
 
 	return (
@@ -20,6 +26,7 @@ export const PreOrderBtn = () => {
         rounded-full  border-[1px] border-peach-light
       "
 				onMouseUp={handleMouseUp}
+				onClick={handleClick}
 				role="button"
 				tabIndex={0}
 			>
