@@ -26,21 +26,21 @@ export const CameraController: FC = () => {
 	const initialRotation = useRef(new THREE.Euler());
 	const offsetPosition = useRef(new THREE.Vector3());
 	const offsetRotation = useRef(new THREE.Euler());
-	const mousePosition = useRef({ x: 0, y: 0 });
-	const isDragging = useRef(false);
-	const dragStart = useRef({ x: 0, y: 0 });
-	const dragDelta = useRef({ x: 0, y: 0 });
+	const interactionPosition = useRef({ x: 0, y: 0 });
+	const isInteracting = useRef(false);
+	const interactionStart = useRef({ x: 0, y: 0 });
+	const interactionDelta = useRef({ x: 0, y: 0 });
 	const currentVelocity = useRef(new THREE.Vector2(0, 0));
-	const mouseOffset = useRef(new THREE.Vector3());
-	const dragThreshold = 5; // pixels
+	const interactionOffset = useRef(new THREE.Vector3());
+	const interactionThreshold = isMobile ? 10 : 5; // pixels, increased for mobile
 	const maxRotation = Math.PI / 8; // 22.5 degrees in radians
-	const mouseSensitivity = 0.3; // Adjust this value to control overall sensitivity (0-1)
-	const deadZoneRadius = 0.1; // Radius of the dead zone in the center of the screen (0-1)
-	const smoothingFactor = 0.05; // Adjust this for smoother transitions (0-1)
+	const sensitivity = isMobile ? 0.1 : 0.3; // Reduced sensitivity for mobile
+	const deadZoneRadius = isMobile ? 0.2 : 0.1; // Increased dead zone for mobile
+	const smoothingFactor = isMobile ? 0.03 : 0.05; // Reduced smoothing for mobile
 
 	const updateCameraPosition = useCallback(() => {
-		const zoomLerp = 0.1;
-		const dragLerp = 0.01;
+		const zoomLerp = isMobile ? 0.05 : 0.1; // Slower zoom for mobile
+		const interactionLerp = isMobile ? 0.005 : 0.01; // Slower interaction for mobile
 		const velocityDecay = 0.95;
 
 		// Zoom-based movement
@@ -69,38 +69,37 @@ export const CameraController: FC = () => {
 		);
 		offsetPosition.current.lerp(targetPosition.sub(initialPosition.current), zoomLerp);
 
-		// Mouse-based movement with reduced effect
-		if (!isDragging.current) {
-			const mouseX = (mousePosition.current.x / size.width) * 2 - 1;
-			const mouseY = -(mousePosition.current.y / size.height) * 2 + 1;
+		// Interaction-based movement
+		if (!isInteracting.current) {
+			const interactionX = (interactionPosition.current.x / size.width) * 2 - 1;
+			const interactionY = -(interactionPosition.current.y / size.height) * 2 + 1;
 
-			// Apply dead zone
-			const distanceFromCenter = Math.sqrt(mouseX * mouseX + mouseY * mouseY);
+			const distanceFromCenter = Math.sqrt(
+				interactionX * interactionX + interactionY * interactionY,
+			);
 			if (distanceFromCenter > deadZoneRadius) {
 				const multiplier = isZoomedIn ? 0.02 : 0.2;
-				const adjustedMultiplier = multiplier * mouseSensitivity;
+				const adjustedMultiplier = multiplier * sensitivity;
 
-				const movementX = mouseX * adjustedMultiplier;
-				const movementY = mouseY * adjustedMultiplier;
+				const movementX = interactionX * adjustedMultiplier;
+				const movementY = interactionY * adjustedMultiplier;
 
 				const targetOffset = new THREE.Vector3(movementX, movementY, 0);
 				targetOffset.applyQuaternion(camera.quaternion);
 
-				// Apply smooth transition
-				mouseOffset.current.lerp(targetOffset, smoothingFactor);
+				interactionOffset.current.lerp(targetOffset, smoothingFactor);
 			} else {
-				// Inside dead zone, gradually move back to center
-				mouseOffset.current.lerp(new THREE.Vector3(0, 0, 0), smoothingFactor);
+				interactionOffset.current.lerp(new THREE.Vector3(0, 0, 0), smoothingFactor);
 			}
 		}
 
-		// Drag-based rotation with inertia
-		if (isDragging.current) {
-			const targetVelocityX = dragDelta.current.x * 0.0005; // Reduced from 0.002 to 0.0005
-			const targetVelocityY = dragDelta.current.y * 0.0005; // Reduced from 0.002 to 0.0005
+		// Interaction-based rotation with inertia
+		if (isInteracting.current) {
+			const targetVelocityX = interactionDelta.current.x * 0.0002; // Further reduced for mobile
+			const targetVelocityY = interactionDelta.current.y * 0.0002;
 
-			currentVelocity.current.x += (targetVelocityX - currentVelocity.current.x) * dragLerp;
-			currentVelocity.current.y += (targetVelocityY - currentVelocity.current.y) * dragLerp;
+			currentVelocity.current.x += (targetVelocityX - currentVelocity.current.x) * interactionLerp;
+			currentVelocity.current.y += (targetVelocityY - currentVelocity.current.y) * interactionLerp;
 		} else {
 			currentVelocity.current.x *= velocityDecay;
 			currentVelocity.current.y *= velocityDecay;
@@ -124,13 +123,13 @@ export const CameraController: FC = () => {
 		camera.position
 			.copy(initialPosition.current)
 			.add(offsetPosition.current)
-			.add(mouseOffset.current);
+			.add(interactionOffset.current);
 		camera.rotation.copy(initialRotation.current);
 		camera.rotateX(offsetRotation.current.x);
 		camera.rotateY(offsetRotation.current.y);
 
 		// Snap back to original rotation
-		if (!isDragging.current) {
+		if (!isInteracting.current) {
 			offsetRotation.current.x *= velocityDecay;
 			offsetRotation.current.y *= velocityDecay;
 		}
@@ -141,47 +140,52 @@ export const CameraController: FC = () => {
 	useFrame(updateCameraPosition);
 
 	useEffect(() => {
-		const handleClick = (event: MouseEvent) => {
-			const dragDistance = Math.sqrt(
-				(event.clientX - dragStart.current.x) ** 2 + (event.clientY - dragStart.current.y) ** 2,
-			);
-
-			if (dragDistance < dragThreshold) {
-				setIsZoomedIn((prev) => !prev);
-			}
+		const handleInteractionStart = (event: MouseEvent | TouchEvent) => {
+			isInteracting.current = true;
+			const { clientX, clientY } = "touches" in event ? event.touches[0] : event;
+			interactionStart.current = { x: clientX, y: clientY };
+			currentVelocity.current.set(0, 0);
 		};
 
-		const handleMouseMove = (event: MouseEvent) => {
-			mousePosition.current = { x: event.clientX, y: event.clientY };
-			if (isDragging.current) {
-				dragDelta.current = {
-					x: event.clientX - dragStart.current.x,
-					y: event.clientY - dragStart.current.y,
+		const handleInteractionMove = (event: MouseEvent | TouchEvent) => {
+			const { clientX, clientY } = "touches" in event ? event.touches[0] : event;
+			interactionPosition.current = { x: clientX, y: clientY };
+			if (isInteracting.current) {
+				interactionDelta.current = {
+					x: clientX - interactionStart.current.x,
+					y: clientY - interactionStart.current.y,
 				};
 			}
 		};
 
-		const handleMouseDown = (event: MouseEvent) => {
-			isDragging.current = true;
-			dragStart.current = { x: event.clientX, y: event.clientY };
-			currentVelocity.current.set(0, 0);
+		const handleInteractionEnd = (event: MouseEvent | TouchEvent) => {
+			const { clientX, clientY } = "changedTouches" in event ? event.changedTouches[0] : event;
+			const interactionDistance = Math.sqrt(
+				(clientX - interactionStart.current.x) ** 2 + (clientY - interactionStart.current.y) ** 2,
+			);
+
+			if (interactionDistance < interactionThreshold) {
+				setIsZoomedIn((prev) => !prev);
+			}
+
+			isInteracting.current = false;
+			interactionDelta.current = { x: 0, y: 0 };
 		};
 
-		const handleMouseUp = () => {
-			isDragging.current = false;
-			dragDelta.current = { x: 0, y: 0 };
-		};
-
-		window.addEventListener("click", handleClick);
-		window.addEventListener("mousemove", handleMouseMove);
-		window.addEventListener("mousedown", handleMouseDown);
-		window.addEventListener("mouseup", handleMouseUp);
+		window.addEventListener("mousedown", handleInteractionStart);
+		window.addEventListener("mousemove", handleInteractionMove);
+		window.addEventListener("mouseup", handleInteractionEnd);
+		window.addEventListener("touchstart", handleInteractionStart);
+		window.addEventListener("touchmove", handleInteractionMove);
+		window.addEventListener("touchend", handleInteractionEnd);
 
 		return () => {
-			window.removeEventListener("click", handleClick);
-			window.removeEventListener("mousemove", handleMouseMove);
-			window.removeEventListener("mousedown", handleMouseDown);
-			window.removeEventListener("mouseup", handleMouseUp);
+			window.removeEventListener("mousedown", handleInteractionStart);
+			window.removeEventListener("mousemove", handleInteractionMove);
+			window.removeEventListener("mouseup", handleInteractionEnd);
+			window.removeEventListener("touchstart", handleInteractionStart);
+			window.removeEventListener("touchmove", handleInteractionMove);
+			window.removeEventListener("touchend", handleInteractionEnd);
 		};
 	}, []);
 
