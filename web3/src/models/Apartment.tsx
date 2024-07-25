@@ -1,6 +1,5 @@
 import { Html, useGLTF } from "@react-three/drei";
 import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
-import { useMedia } from "react-use";
 import { useRef, useState } from "react";
 import { Box3, Sphere, Vector3 } from "three";
 import { useFrame, useThree } from "@react-three/fiber";
@@ -13,27 +12,35 @@ export function Apartment(
 	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 	const { nodes, materials } = useGLTF("https://r2.getpeachpod.com/apartment.glb") as any;
 	const { url } = useScreenContentCtx();
-	const isMobile = useMedia("(max-width: 768px)");
 
-	const [htmlPosition, setHtmlPosition] = useState({ top: 0, left: 0, width: 0, height: 0, radius: 0 });
+	const [htmlPosition, setHtmlPosition] = useState({
+		top: 0,
+		left: 0,
+		width: 0,
+		height: 0,
+		radius: 0,
+	});
 	const { camera, size } = useThree();
 
-	const screenRef = useRef();
-	
-	
+	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	const screenRef = useRef<any>();
+
 	useFrame(() => {
 		if (screenRef.current) {
-			const screenMesh = screenRef.current.children.find(child => child.geometry === nodes.Cube001_1.geometry);
+			const screenMesh = screenRef.current.children.find(
+				// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+				(child: any) => child.geometry === nodes.Cube001_1.geometry,
+			);
 			if (screenMesh) {
 				const box = new Box3().setFromObject(screenMesh);
 				const sphere = new Sphere();
 				box.getBoundingSphere(sphere);
-				
+
 				const corners = [
 					new Vector3(box.min.x, box.min.y, box.min.z),
 					new Vector3(box.max.x, box.max.y, box.max.z),
 				];
-				
+
 				const screenCorners = corners.map((corner) => {
 					const screenPosition = corner.clone().project(camera);
 					return new Vector3(
@@ -42,22 +49,20 @@ export function Apartment(
 						0,
 					);
 				});
-				
+
 				const [min, max] = screenCorners;
 				const left = Math.min(min.x, max.x);
 				const top = Math.min(min.y, max.y);
 				const width = Math.abs(max.x - min.x);
 				const height = Math.abs(max.y - min.y);
-				
+
 				// Calculate the radius in screen space
 				const centerWorld = sphere.center.clone();
 				const edgeWorld = centerWorld.clone().add(new Vector3(sphere.radius, 0, 0));
 				const centerScreen = centerWorld.project(camera);
 				const edgeScreen = edgeWorld.project(camera);
-				const radiusScreen = Math.abs(
-					((edgeScreen.x - centerScreen.x) * size.width) / 2
-				);
-				
+				const radiusScreen = Math.abs(((edgeScreen.x - centerScreen.x) * size.width) / 2);
+
 				setHtmlPosition({ left, top, width, height, radius: radiusScreen });
 			}
 		}
@@ -296,18 +301,20 @@ export function Apartment(
 							transform: "perspective(1000px) rotateY(-10deg)",
 						}}
 					>
-						<div style={{
-							width: "100%", // Slightly smaller to fit within the circular bound
-							height: "96%",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-						}}>
+						<div
+							style={{
+								width: "100%", // Slightly smaller to fit within the circular bound
+								height: "96%",
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+							}}
+						>
 							{props.showiFrame ? (
 								<iframe
 									src={url}
 									title="Screen content"
-									style={{ width: '100%', height: '100%', border: 'none', borderRadius: '50%' }}
+									style={{ width: "100%", height: "100%", border: "none", borderRadius: "50%" }}
 								/>
 							) : (
 								<div>HTML Content</div>
