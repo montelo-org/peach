@@ -1,15 +1,67 @@
 import { Html, useGLTF } from "@react-three/drei";
 import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
+import { useMedia } from "react-use";
+import { useRef, useState } from "react";
+import { Box3, Sphere, Vector3 } from "three";
+import { useFrame, useThree } from "@react-three/fiber";
 
 export function Apartment(
 	props: JSX.IntrinsicElements["group"] & {
 		showiFrame: boolean;
-		isZoomedIn: boolean;
 	},
 ) {
 	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 	const { nodes, materials } = useGLTF("https://r2.getpeachpod.com/apartment.glb") as any;
 	const { url } = useScreenContentCtx();
+	const isMobile = useMedia("(max-width: 768px)");
+
+	const [htmlPosition, setHtmlPosition] = useState({ top: 0, left: 0, width: 0, height: 0, radius: 0 });
+	const { camera, size } = useThree();
+
+	const screenRef = useRef();
+	
+	
+	useFrame(() => {
+		if (screenRef.current) {
+			const screenMesh = screenRef.current.children.find(child => child.geometry === nodes.Cube001_1.geometry);
+			if (screenMesh) {
+				const box = new Box3().setFromObject(screenMesh);
+				const sphere = new Sphere();
+				box.getBoundingSphere(sphere);
+				
+				const corners = [
+					new Vector3(box.min.x, box.min.y, box.min.z),
+					new Vector3(box.max.x, box.max.y, box.max.z),
+				];
+				
+				const screenCorners = corners.map((corner) => {
+					const screenPosition = corner.clone().project(camera);
+					return new Vector3(
+						((screenPosition.x + 0.99) * size.width) / 2,
+						((-screenPosition.y + 0.98) * size.height) / 2,
+						0,
+					);
+				});
+				
+				const [min, max] = screenCorners;
+				const left = Math.min(min.x, max.x);
+				const top = Math.min(min.y, max.y);
+				const width = Math.abs(max.x - min.x);
+				const height = Math.abs(max.y - min.y);
+				
+				// Calculate the radius in screen space
+				const centerWorld = sphere.center.clone();
+				const edgeWorld = centerWorld.clone().add(new Vector3(sphere.radius, 0, 0));
+				const centerScreen = centerWorld.project(camera);
+				const edgeScreen = edgeWorld.project(camera);
+				const radiusScreen = Math.abs(
+					((edgeScreen.x - centerScreen.x) * size.width) / 2
+				);
+				
+				setHtmlPosition({ left, top, width, height, radius: radiusScreen });
+			}
+		}
+	});
 
 	return (
 		<>
@@ -219,19 +271,50 @@ export function Apartment(
 					material={materials.Mirror}
 					position={[1.202, 0.047, -2.875]}
 				/>
-				<group position={[-2.336, 0.675, -0.266]} rotation={[-1.559, -1.241, -1.558]}>
+				<group
+					ref={screenRef}
+					position={[-2.336, 0.675, -0.266]}
+					rotation={[-1.559, -1.241, -1.558]}
+				>
 					<mesh geometry={nodes.Cube001.geometry} material={materials["Plastic_black glossy"]} />
 					<mesh geometry={nodes.Cube001_1.geometry} material={materials.Screen} />
 					<mesh geometry={nodes.Cube001_2.geometry} material={materials.Metal_aluminum} />
-					<Html
-						// transform
-						wrapperClass="laptop"
-						distanceFactor={1}
-						position={[-0.07, 0.125, -0.2]}
-					>
-						{props.showiFrame && <iframe src={url} title="Screen base url" />}
-					</Html>
 				</group>
+				{/* Render HTML content */}
+				<Html fullscreen>
+					<div
+						style={{
+							position: "absolute",
+							left: `${htmlPosition.left}px`,
+							top: `${htmlPosition.top}px`,
+							width: `${htmlPosition.width}px`,
+							height: `${htmlPosition.height}px`,
+							overflow: "hidden",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							transform: "perspective(1000px) rotateY(-10deg)",
+						}}
+					>
+						<div style={{
+							width: "100%", // Slightly smaller to fit within the circular bound
+							height: "96%",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+						}}>
+							{props.showiFrame ? (
+								<iframe
+									src={url}
+									title="Screen content"
+									style={{ width: '100%', height: '100%', border: 'none', borderRadius: '50%' }}
+								/>
+							) : (
+								<div>HTML Content</div>
+							)}
+						</div>
+					</div>
+				</Html>
 				<group position={[-2.336, 0.591, -0.266]} rotation={[0, -1.567, 0]}>
 					<mesh
 						geometry={nodes.Cylinder004.geometry}
