@@ -6,6 +6,10 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import WeatherPage from "./pages/weather";
 import WouldyouratherPage from "./pages/wouldyourather";
 import GenerateImagePage from "./pages/generate_image";
+import IdlingPage from "./pages/idling";
+import RecordingPage from "./pages/recording";
+import ProcessingPage from "./pages/processing";
+import PlaybackPage from "./pages/playback";
 
 const router = createBrowserRouter([
 	{
@@ -24,9 +28,26 @@ const router = createBrowserRouter([
 		path: "/generate_image",
 		element: <GenerateImagePage />,
 	},
+	{
+		path: "/idling",
+		element: <IdlingPage />,
+	},
+	{
+		path: "/recording",
+		element: <RecordingPage />,
+	},
+	{
+		path: "/processing",
+		element: <ProcessingPage />,
+	},
+	{
+		path: "/playback",
+		element: <PlaybackPage />,
+	},
 ]);
 
 const root = document.getElementById("root");
+// biome-ignore lint/style/noNonNullAssertion: <explanation>
 ReactDOM.createRoot(root!).render(
 	<React.StrictMode>
 		<RouterProvider router={router} />

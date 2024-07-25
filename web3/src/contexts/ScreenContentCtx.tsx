@@ -13,7 +13,7 @@ interface ScreenContentProviderProps {
 }
 
 export const ScreenContentProvider: FC<ScreenContentProviderProps> = ({ children }) => {
-	const [url, setUrl] = useState<string>(import.meta.env.VITE_SCREEN_BASE_URL);
+	const [url, setUrl] = useState<string>(`${import.meta.env.VITE_SCREEN_BASE_URL}/idling`);
 
 	return <ScreenContentCtx.Provider value={{ url, setUrl }}>{children}</ScreenContentCtx.Provider>;
 };

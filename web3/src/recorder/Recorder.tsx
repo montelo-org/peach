@@ -1,15 +1,9 @@
-import { MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
+import { type MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
 import { LoaderCircle, Mic, Square } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { audioWorkletCode } from "./audioWorklet.ts";
 import { RecordingState } from "./RecordingState.ts";
-import {
-	CHANNELS,
-	FRAMES_PER_BUFFER,
-	MAX_RECORDING_DURATION,
-	MESSAGES,
-	SAMPLE_RATE,
-} from "./constants.ts";
+import { CHANNELS, FRAMES_PER_BUFFER, MAX_RECORDING_DURATION, MESSAGES, SAMPLE_RATE, } from "./constants.ts";
 import { useProgress } from "@react-three/drei";
 import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
 
@@ -360,7 +354,7 @@ export const Recorder = () => {
 	const handleClick: MouseEventHandler = (e) => {
 		e.preventDefault();
 		e.stopPropagation();
-		
+
 		const handlerMap: Record<RecordingState, () => void> = {
 			[RecordingState.IDLING]: () => {
 				void startRecording();
@@ -409,9 +403,23 @@ export const Recorder = () => {
 		};
 	}, []);
 
+	const handleChangingRecordingState = () => {
+		const handlerMap: Record<RecordingState, string> = {
+			[RecordingState.IDLING]: "/idling",
+			[RecordingState.INITIALIZING]: "/processing",
+			[RecordingState.RECORDING]: "/recording",
+			[RecordingState.PROCESSING]: "/processing",
+			[RecordingState.PLAYBACK]: "/playback",
+		};
+
+		const newPath = handlerMap[recordingState];
+		setUrl(`${import.meta.env.VITE_SCREEN_BASE_URL}${newPath}`);
+	};
+	useEffect(handleChangingRecordingState, [recordingState]);
+
 	return (
 		showComponents && (
-			<div className={"absolute bottom-8 left-1/2 transform -translate-x-1/2"}>
+			<div className={"absolute bottom-8 left-1/2 transform -translate-x-1/2"} style={{ zIndex: "16695733"}}>
 				<div
 					className={`w-16 h-16 rounded-full select-none transition-all duration-100 mx-auto
 				[box-shadow:0_8px_0_0_#f81b22,0_13px_0_0_#f7404641] border-[1px] border-red-400
