@@ -16,6 +16,7 @@ export const CameraController: FC<{
 	const delayDuration = 1000;
 	const hasStarted = useRef(false);
 	const isAnimating = useRef(false);
+	const hasSetZoomingInFalse = useRef(false);
 
 	useEffect(() => {
 		initialPosition.current.copy(camera.position);
@@ -43,6 +44,7 @@ export const CameraController: FC<{
 			initialPosition.current.copy(camera.position);
 			isAnimating.current = true;
 			setIsZoomingIn(true);
+			hasSetZoomingInFalse.current = false;
 		}
 
 		const elapsedTime = currentTime - animationStartTime.current;
@@ -56,10 +58,18 @@ export const CameraController: FC<{
 		camera.lookAt(0, 0, 0);
 		camera.updateProjectionMatrix();
 
+		// Set isZoomingIn to false 200ms before the animation ends
+		if (
+			progress >= (animationDuration - 200) / animationDuration &&
+			!hasSetZoomingInFalse.current
+		) {
+			setIsZoomingIn(false);
+			hasSetZoomingInFalse.current = true;
+		}
+
 		// Check if the animation has completed
 		if (progress >= 1 && isAnimating.current) {
 			isAnimating.current = false;
-			setIsZoomingIn(false);
 		}
 	});
 
