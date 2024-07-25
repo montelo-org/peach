@@ -303,6 +303,9 @@ export const Recorder = () => {
 						} else if (p.tool_name === "generate_image") {
 							const newUrl = `${import.meta.env.VITE_SCREEN_BASE_URL}/generate_image?imageUrl=${encodeURIComponent(p.tool_res as string)}`;
 							setUrl(newUrl);
+						} else if (p.tool_name === "get_weather") {
+							const newUrl = `${import.meta.env.VITE_SCREEN_BASE_URL}/weather?imageUrl=${encodeURIComponent(p.tool_res.image_url)}&temperature=${encodeURIComponent(p.tool_res.temperature)}`;
+							setUrl(newUrl);
 						}
 					}
 				}
@@ -405,7 +408,9 @@ export const Recorder = () => {
 
 	const handleChangingRecordingState = () => {
 		const checkIfInImage = () => {
-			return ["would-you-rather"].some((element) => url.includes(element));
+			return ["would-you-rather", "generate_image", "weather"].some((element) =>
+				url.includes(element),
+			);
 		};
 
 		const handlerMap: Record<RecordingState, () => string | null> = {

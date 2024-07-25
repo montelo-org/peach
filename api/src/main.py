@@ -105,12 +105,17 @@ async def transcribe_stream(ws: WebSocket):
     cartesia = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
 
     def generate_image(prompt):
+        print(f"Generating image {prompt}")
         prodia_key = "72a1b2b6-281a-4211-a658-e7c17780c2d2"
         response = requests.post(
             "https://api.prodia.com/v1/sd/generate",
             json={
                 "prompt": prompt,
-                "model": "childrensStories_v1ToonAnime.safetensors [2ec7b88b]"
+                "model": "childrensStories_v1ToonAnime.safetensors [2ec7b88b]",
+                "steps": 20,
+                "cfg": 7,
+                "sampler": "DPM++ 2M Karras",
+                "new": "true",
             },
             headers={
                 "accept": "application/json",
@@ -186,8 +191,29 @@ async def transcribe_stream(ws: WebSocket):
                 if attempt >= max_retries - 1:
                     return "Sorry, an error occurred."
 
-    def get_weather(location):
-        pass
+    def get_weather():
+        latitude = "43.6532"
+        longitude = "79.3832"
+        city = "Toronto"
+        res = requests.get(
+            f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,is_day,rain&forecast_days=1")
+        res = res.json()
+        temperature = res["current"]["temperature_2m"]
+        is_day = res["current"]["is_day"]
+        rain = res["current"]["rain"]
+
+        # words to say
+        response = f"It's {temperature} degrees in {city}."
+
+        # generate image
+        image_prompt = f"{city} during the {'night' if is_day == 0 else 'day'} when it is {temperature} degrees {'and raining' if rain == 1 else ''}"
+        image_url = generate_image(image_prompt)
+
+        return dict(
+            response=response,
+            temperature=temperature,
+            image_url=image_url,
+        )
 
     tool_map = dict(
         generate_image=generate_image,
@@ -291,16 +317,7 @@ async def transcribe_stream(ws: WebSocket):
                     "function": {
                         "name": "get_weather",
                         "description": "Gets the weather for a location.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "location": {
-                                    "type": "string",
-                                    "description": "The location.",
-                                }
-                            },
-                            "required": ["location"],
-                        },
+                        "parameters": {},
                     }
                 }
             ],
@@ -336,12 +353,9 @@ async def transcribe_stream(ws: WebSocket):
                 return dict(content=content, tool_name=function_name, tool_res=parsed)
             elif function_name == "get_weather":
                 return dict(
-                    content="",
+                    content=function_response["response"],
                     tool_name=function_name,
-                    tool_res=dict(
-                        imageUrl="",
-                        temperature=""
-                    )
+                    tool_res=function_response
                 )
         else:
             print("No tool call")
