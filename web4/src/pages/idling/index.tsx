@@ -130,11 +130,13 @@ export default function IdlingPage() {
 
 	return (
 		<main className="w-screen h-screen flex flex-col items-center justify-center bg-gray-900">
-			<canvas ref={canvasRef} width={400} height={200} className="rounded-[50px] mb-1" />
-			<div className={"justify-center items-center flex flex-col"}>
+			<div className={"justify-center items-center flex flex-col gap-2"}>
 				<p className="text-white text-4xl font-medium">
 					Hey, I'm <span className={"text-peach font-pacifico"}>Peach</span> 🍑
 				</p>
+				{/*<p className="text-white text-2xl font-medium">*/}
+				{/*	You can ask me things like*/}
+				{/*</p>*/}
 			</div>
 		</main>
 	);
