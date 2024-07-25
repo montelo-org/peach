@@ -2,7 +2,7 @@ import { type EffectCallback, useEffect, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { toast, Toaster } from "react-hot-toast";
 import { useEffectOnce, useLocalStorage } from "react-use";
-import { PreOrderBtn } from "./components/PreOrderBtn.tsx";
+import { ButtonGroup } from "./components/ButtonGroup.tsx";
 import { Recorder } from "./recorder/Recorder.tsx";
 import { queryClient } from "./queryClient.ts";
 import { ScreenContentProvider } from "./contexts/ScreenContentCtx.tsx";
@@ -66,7 +66,7 @@ function App() {
 					<div
 						className={`transition-opacity duration-700 ${!isLoading && !isTransitioning ? "opacity-100" : "opacity-0 pointer-events-none"}`}
 					>
-						<PreOrderBtn />
+						<ButtonGroup />
 						<Recorder />
 					</div>
 					<Toaster />

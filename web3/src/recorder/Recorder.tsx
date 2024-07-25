@@ -419,7 +419,7 @@ export const Recorder = () => {
 
 	return (
 		showComponents && (
-			<div className={"absolute bottom-8 left-1/2 transform -translate-x-1/2"} style={{ zIndex: "19698271"}}>
+			<div className={"absolute bottom-8 left-1/2 transform -translate-x-1/2"} style={{ zIndex: "19999999"}}>
 				<div
 					className={`w-16 h-16 rounded-full select-none transition-all duration-100 mx-auto
 				[box-shadow:0_8px_0_0_#f81b22,0_13px_0_0_#f7404641] border-[1px] border-red-400

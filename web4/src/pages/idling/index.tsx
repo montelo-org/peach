@@ -128,15 +128,16 @@ export default function IdlingPage() {
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	useWaveformAnimation(canvasRef);
 
+	const questions = ["Play game X", "Spicy would you rather question", "What's the weather in ___?"];
+
 	return (
 		<main className="w-screen h-screen flex flex-col items-center justify-center bg-gray-900">
-			<div className={"justify-center items-center flex flex-col gap-2"}>
-				<p className="text-4xl font-medium text-peach font-pacifico">
-					Peach 🍑
+			<div className={"justify-center items-center flex flex-col"}>
+				<p className="text-4xl font-medium text-peach font-pacifico">Peach 🍑</p>
+				<p className="text-white text-lg mt-8">Try asking</p>
+				<p className="text-white text-xl font-medium">
+					{questions[Math.floor(Math.random() * questions.length)]}
 				</p>
-				{/*<p className="text-white text-2xl font-medium">*/}
-				{/*	You can ask me things like*/}
-				{/*</p>*/}
 			</div>
 		</main>
 	);
