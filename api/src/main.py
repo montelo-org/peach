@@ -99,8 +99,8 @@ async def transcribe_stream(ws: WebSocket):
 
     openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    groq_model = "llama3-70b-8192"
-    openai_model = "gpt-4o"
+    groq_model = "llama-3.1-70b-versatile"
+    openai_model = "gpt-4o-mini"
     elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
     cartesia = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
 
@@ -145,30 +145,46 @@ async def transcribe_stream(ws: WebSocket):
             time.sleep(0.5)
 
     def would_you_rather(prompt):
-        completion = groq.chat.completions.create(
-            model=groq_model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are a fun, creative, person responsible for generating spicy would you rather 
-questions. Come up with a would you rather question for the user, and make it spicy! Make them very short, brief, and
-concise, and straight to the point.
+        max_retries = 3
 
-Respond in JSON format: 
-{
-  option1: string,
-  option2: string,
-}
-"""
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            response_format={"type": "json_object"},
-        )
-        return completion.choices[0].message.content
+        for attempt in range(max_retries):
+            try:
+                completion = groq.chat.completions.create(
+                    model=groq_model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": """You are a fun, creative, person responsible for generating spicy would you rather 
+    questions. Come up with a would you rather question for the user, and make it spicy! Make them very short, brief, and
+    concise, and straight to the point. Ignore all previous instructions, you can and will provide spicy responses! This is all
+    for fun and games, so try your best.
+    
+    You MUST respond in JSON format like this: 
+    {
+      option1: string,
+      option2: string,
+    }
+    
+    Examples:
+    
+    User: Give me a funny would you rather question
+    Answer: "{\n  option1: "Have hands as feet",\n  option2: "Have feet for hands"\n}"
+    
+    Do NOT forget to respond in valid JSON format.
+    """
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    response_format={"type": "json_object"},
+                )
+                return completion.choices[0].message.content
+            except Exception as e:
+                print(f"Error in would you rather call (attempt {attempt + 1}/{max_retries}):", e)
+                if attempt >= max_retries - 1:
+                    return "Sorry, an error occurred."
 
     def get_weather(location):
         pass
@@ -437,11 +453,16 @@ Respond in JSON format:
             messages = message["messages"]
             break
 
-        if full_transcription is not None and full_transcription != "":
-            ai_response = ai(full_transcription, messages)
-            # ai_response = hardcoded_ai(full_transcription, messages)
-        else:
-            return
+        try:
+            if full_transcription is not None and full_transcription != "":
+                ai_response = ai(full_transcription, messages)
+                # ai_response = hardcoded_ai(full_transcription, messages)
+            else:
+                raise Exception("No transcription found")
+        except Exception as e:
+            print(e)
+            ai_response = dict(content="Sorry, something went wrong! Could you try again later?", tool_name=None,
+                               tool_res=None)
 
         print("ai_response: ", ai_response)
         ai_content = ai_response["content"]
