@@ -131,8 +131,8 @@ export default function IdlingPage() {
 	return (
 		<main className="w-screen h-screen flex flex-col items-center justify-center bg-gray-900">
 			<div className={"justify-center items-center flex flex-col gap-2"}>
-				<p className="text-white text-4xl font-medium">
-					Hey, I'm <span className={"text-peach font-pacifico"}>Peach</span> 🍑
+				<p className="text-4xl font-medium text-peach font-pacifico">
+					Peach 🍑
 				</p>
 				{/*<p className="text-white text-2xl font-medium">*/}
 				{/*	You can ask me things like*/}
