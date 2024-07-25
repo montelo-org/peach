@@ -1,18 +1,21 @@
-import { type FC, useEffect, useRef } from "react";
+import { type Dispatch, type FC, type SetStateAction, useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { MOBILE_ZOOMED_X, MOBILE_ZOOMED_Y, MOBILE_ZOOMED_Z, ZOOMED_X, ZOOMED_Y, ZOOMED_Z, } from "./constants";
 import { useMedia } from "react-use";
 
-export const CameraController: FC = () => {
+export const CameraController: FC<{
+	setIsZoomingIn: Dispatch<SetStateAction<boolean>>;
+}> = ({ setIsZoomingIn }) => {
 	const { camera } = useThree();
 	const isMobile = useMedia("(max-width: 768px)");
 	const targetPosition = useRef(new THREE.Vector3());
 	const initialPosition = useRef(new THREE.Vector3());
 	const animationStartTime = useRef(0);
-	const animationDuration = 4000;
-	const delayDuration = 1500;
+	const animationDuration = 3000;
+	const delayDuration = 1000;
 	const hasStarted = useRef(false);
+	const isAnimating = useRef(false);
 
 	useEffect(() => {
 		initialPosition.current.copy(camera.position);
@@ -38,6 +41,8 @@ export const CameraController: FC = () => {
 		if (!hasStarted.current) {
 			hasStarted.current = true;
 			initialPosition.current.copy(camera.position);
+			isAnimating.current = true;
+			setIsZoomingIn(true);
 		}
 
 		const elapsedTime = currentTime - animationStartTime.current;
@@ -50,6 +55,12 @@ export const CameraController: FC = () => {
 
 		camera.lookAt(0, 0, 0);
 		camera.updateProjectionMatrix();
+
+		// Check if the animation has completed
+		if (progress >= 1 && isAnimating.current) {
+			isAnimating.current = false;
+			setIsZoomingIn(false);
+		}
 	});
 
 	return null;

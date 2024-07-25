@@ -6,6 +6,7 @@ import { Apartment } from "./Apartment.tsx";
 import { INITIAL_X, INITIAL_Y, INITIAL_Z, MOBILE_INITIAL_X, MOBILE_INITIAL_Y, MOBILE_INITIAL_Z, } from "./constants.ts";
 import { CameraController } from "./CameraController.tsx";
 import { useMedia } from "react-use";
+import { useState } from "react";
 
 type ModelsWrapperProps = {
 	showiFrame: boolean;
@@ -14,6 +15,7 @@ type ModelsWrapperProps = {
 
 export const SceneContainer: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoading }) => {
 	const isMobile = useMedia("(max-width: 768px)");
+	const [isZoomingIn, setIsZoomingIn] = useState<boolean>(false);
 
 	return (
 		<Canvas
@@ -32,8 +34,8 @@ export const SceneContainer: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoadin
 			<ambientLight intensity={0.5} />
 			<Environment preset="dawn" />
 			<LoadingManager setIsLoading={setIsLoading} />
-			<Apartment showiFrame={showiFrame} />
-			<CameraController />
+			<Apartment showiFrame={showiFrame && !isZoomingIn} />
+			<CameraController setIsZoomingIn={setIsZoomingIn} />
 		</Canvas>
 	);
 };

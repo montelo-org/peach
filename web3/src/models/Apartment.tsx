@@ -316,9 +316,7 @@ export function Apartment(
 									title="Screen content"
 									style={{ width: "100%", height: "100%", border: "none", borderRadius: "50%" }}
 								/>
-							) : (
-								<div>HTML Content</div>
-							)}
+							) : null}
 						</div>
 					</div>
 				</Html>
