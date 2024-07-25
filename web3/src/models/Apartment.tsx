@@ -4,13 +4,14 @@ import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Box3, Sphere, Vector3 } from "three";
 
-export function Apartment(props: JSX.IntrinsicElements["group"] & {
-	showiFrame: boolean;
-}) {
+export function Apartment(
+	props: JSX.IntrinsicElements["group"] & {
+		showiFrame: boolean;
+	},
+) {
 	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-	const { nodes, materials } = useGLTF("https://r2.getpeachpod.com/min-apartment.glb") as any;
+	const { nodes, materials } = useGLTF("https://r2.getpeachpod.com/min2-apartment.glb") as any;
 	const { url } = useScreenContentCtx();
-
 	const [htmlPosition, setHtmlPosition] = useState({
 		top: 0,
 		left: 0,
@@ -65,46 +66,8 @@ export function Apartment(props: JSX.IntrinsicElements["group"] & {
 			}
 		}
 	});
-
 	return (
 		<group {...props} dispose={null}>
-			<group position={[-3.5, 1.997, -3.637]}>
-				<mesh geometry={nodes.Cube029.geometry} material={materials.Metal} />
-				<mesh geometry={nodes.Cube029_1.geometry} material={materials.DarkWood} />
-				<mesh geometry={nodes.Cube029_2.geometry} material={materials.Marble} />
-			</group>
-			<mesh
-				geometry={nodes.Toaster_Low.geometry}
-				material={materials.Toaster}
-				position={[-1.771, 1.03, -3.797]}
-			/>
-			<mesh
-				geometry={nodes.Microwave_Low.geometry}
-				material={materials.Microwave}
-				position={[-1.318, 1.105, -3.75]}
-			/>
-			<mesh
-				geometry={nodes.Stove.geometry}
-				material={materials.Stovetop}
-				position={[-2.125, 0.936, -3.676]}
-			/>
-			<mesh
-				geometry={nodes.Oven.geometry}
-				material={materials.Oven}
-				position={[-2.124, 0.464, -3.47]}
-			/>
-			<group position={[-0.409, 2.148, -3.998]}>
-				<mesh geometry={nodes.Cube020.geometry} material={materials.Metal} />
-				<mesh geometry={nodes.Cube020_1.geometry} material={materials.LightGradient2} />
-				<mesh geometry={nodes.Cube020_2.geometry} material={materials.Marble} />
-				<mesh geometry={nodes.Cube020_3.geometry} material={materials.Wood} />
-				<mesh geometry={nodes.Cube020_4.geometry} material={materials.Ceiling} />
-				<mesh geometry={nodes.Cube020_5.geometry} material={materials.WoodFloor} />
-				<mesh geometry={nodes.Cube020_6.geometry} material={materials.Walls} />
-				<mesh geometry={nodes.Cube020_7.geometry} material={materials.TileFloor} />
-				<mesh geometry={nodes.Cube020_8.geometry} material={materials.TileWall} />
-				<mesh geometry={nodes.Cube020_9.geometry} material={materials.Outlet} />
-			</group>
 			<mesh
 				geometry={nodes.Sofa.geometry}
 				material={materials.Couch}
@@ -119,29 +82,10 @@ export function Apartment(props: JSX.IntrinsicElements["group"] & {
 				material={materials.DarkWood}
 				position={[-3.674, 0.31, 0.229]}
 			/>
-			<mesh
-				geometry={nodes.Glass001.geometry}
-				material={materials.Glass}
-				position={[-3.601, 1.317, 1.993]}
-			/>
-			<group position={[-2.046, 0.924, 1.379]}>
-				<mesh geometry={nodes.Cube044.geometry} material={materials.Wood} />
-				<mesh geometry={nodes.Cube044_1.geometry} material={materials.Metal} />
-			</group>
 			<group position={[-3.574, 0.599, 0.628]}>
 				<mesh geometry={nodes.Cylinder005.geometry} material={materials.Leaf} />
 				<mesh geometry={nodes.Cylinder005_1.geometry} material={materials.PottedPlant} />
 			</group>
-			<mesh
-				geometry={nodes.Plane002.geometry}
-				material={nodes.Plane002.material}
-				position={[-4.979, 2.844, -1.141]}
-			/>
-			<mesh
-				geometry={nodes.Plane003.geometry}
-				material={nodes.Plane003.material}
-				position={[-1.829, 3.011, 1.432]}
-			/>
 			<mesh
 				geometry={nodes.Mug.geometry}
 				material={materials.Mug}
@@ -157,7 +101,7 @@ export function Apartment(props: JSX.IntrinsicElements["group"] & {
 				material={materials.Plastic}
 				position={[-2.327, 0.464, -0.332]}
 			/>
-			<group position={[-2.336, 0.675, -0.266]} rotation={[-1.559, -1.241, -1.558]}>
+			<group ref={screenRef} position={[-2.336, 0.675, -0.266]} rotation={[-1.559, -1.241, -1.558]}>
 				<mesh geometry={nodes.Cube001.geometry} material={materials["Plastic_black glossy"]} />
 				<mesh geometry={nodes.Cube001_1.geometry} material={materials.Screen} />
 				<mesh geometry={nodes.Cube001_2.geometry} material={materials.Metal_aluminum} />
@@ -179,7 +123,7 @@ export function Apartment(props: JSX.IntrinsicElements["group"] & {
 				>
 					<div
 						style={{
-							width: "100%", // Slightly smaller to fit within the circular bound
+							width: "100%",
 							height: "96%",
 							display: "flex",
 							alignItems: "center",
@@ -220,4 +164,4 @@ export function Apartment(props: JSX.IntrinsicElements["group"] & {
 	);
 }
 
-useGLTF.preload("https://r2.getpeachpod.com/min-apartment.glb");
+useGLTF.preload("https://r2.getpeachpod.com/min2-apartment.glb");

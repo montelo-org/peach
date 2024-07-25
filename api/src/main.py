@@ -459,7 +459,7 @@ Respond in JSON format:
         await ws.close()
 
 
-@app.function(image=image, secrets=[Secret.from_name(secret_name)], gpu=gpu.A10G())
+@app.function(image=image, secrets=[Secret.from_name(secret_name)], gpu=gpu.A10G(), keep_warm=1)
 @asgi_app()
 def fastapi_app():
     return web_app

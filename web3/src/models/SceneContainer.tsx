@@ -1,12 +1,12 @@
 import type { Dispatch, FC, SetStateAction } from "react";
-import { Environment } from "@react-three/drei";
+import { useState } from "react";
+import { Environment, Sky } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { LoadingManager } from "./LoadingManager.tsx";
 import { Apartment } from "./Apartment.tsx";
 import { INITIAL_X, INITIAL_Y, INITIAL_Z, MOBILE_INITIAL_X, MOBILE_INITIAL_Y, MOBILE_INITIAL_Z, } from "./constants.ts";
 import { CameraController } from "./CameraController.tsx";
 import { useMedia } from "react-use";
-import { useState } from "react";
 
 type ModelsWrapperProps = {
 	showiFrame: boolean;
@@ -30,8 +30,7 @@ export const SceneContainer: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoadin
 				],
 			}}
 		>
-			<pointLight position={[INITIAL_X, INITIAL_Y + 1, INITIAL_Z]} color="#fcf3dc" intensity={4} />
-			<ambientLight intensity={0.5} />
+			<Sky />
 			<Environment preset="dawn" />
 			<LoadingManager setIsLoading={setIsLoading} />
 			<Apartment showiFrame={showiFrame && !isZoomingIn} />

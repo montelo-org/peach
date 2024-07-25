@@ -13,7 +13,7 @@ export const CameraController: FC<{
 	const initialPosition = useRef(new THREE.Vector3());
 	const animationStartTime = useRef(0);
 	const animationDuration = 3000;
-	const delayDuration = 1000;
+	const delayDuration = 1500;
 	const hasStarted = useRef(false);
 	const isAnimating = useRef(false);
 	const hasSetZoomingInFalse = useRef(false);
