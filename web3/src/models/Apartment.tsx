@@ -1,10 +1,12 @@
-import React, { useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Html, useGLTF } from "@react-three/drei";
 import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Box3, Sphere, Vector3 } from "three";
 
-export function Apartment(props: JSX.IntrinsicElements["group"]) {
+export function Apartment(props: JSX.IntrinsicElements["group"] & {
+	showiFrame: boolean;
+}) {
 	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 	const { nodes, materials } = useGLTF("https://r2.getpeachpod.com/min-apartment.glb") as any;
 	const { url } = useScreenContentCtx();
