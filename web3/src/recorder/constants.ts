@@ -1,5 +1,5 @@
-export const SAMPLE_RATE = 16000;
-export const BUFFER_DURATION = 0.5;
+export const SAMPLE_RATE = 24000;
+export const BUFFER_DURATION = 0.2;
 export const FRAMES_PER_BUFFER = Math.floor(SAMPLE_RATE * BUFFER_DURATION);
 export const CHANNELS = 1;
 export const MAX_RECORDING_DURATION = 25000;
