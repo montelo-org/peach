@@ -1,6 +1,6 @@
 import type { Dispatch, FC, SetStateAction } from "react";
 import { useState } from "react";
-import { Environment, Sky } from "@react-three/drei";
+import { Environment, Stars } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { LoadingManager } from "./LoadingManager.tsx";
 import { Apartment } from "./Apartment.tsx";
@@ -30,7 +30,8 @@ export const SceneContainer: FC<ModelsWrapperProps> = ({ showiFrame, setIsLoadin
 				],
 			}}
 		>
-			<Sky />
+			<color attach="background" args={["#000000"]} />
+			<Stars />
 			<Environment preset="dawn" />
 			<LoadingManager setIsLoading={setIsLoading} />
 			<Apartment showiFrame={showiFrame && !isZoomingIn} />

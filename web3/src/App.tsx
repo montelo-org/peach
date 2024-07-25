@@ -69,7 +69,7 @@ function App() {
 						<ButtonGroup />
 						<Recorder />
 					</div>
-					<Toaster />
+					<Toaster containerStyle={{ zIndex: 20000001 }} />
 				</main>
 			</ScreenContentProvider>
 		</QueryClientProvider>
