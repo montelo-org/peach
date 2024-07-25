@@ -27,7 +27,7 @@ export const Recorder = () => {
 	});
 
 	// change screen
-	const { setUrl } = useScreenContentCtx();
+	const { url, setUrl } = useScreenContentCtx();
 
 	// recording
 	const [recordingState, setRecordingState] = useState<RecordingState>(RecordingState.IDLING);
@@ -404,20 +404,35 @@ export const Recorder = () => {
 	}, []);
 
 	const handleChangingRecordingState = () => {
-		const handlerMap: Record<RecordingState, string | null> = {
-			[RecordingState.IDLING]: "/idling",
-			[RecordingState.INITIALIZING]: "/processing",
-			[RecordingState.RECORDING]: "/recording",
-			[RecordingState.PROCESSING]: "/processing",
-			[RecordingState.PLAYBACK]: "/playback",
+		const checkIfInImage = () => {
+			return ["would-you-rather"].some((element) => url.includes(element));
 		};
 
-		const newPath = handlerMap[recordingState];
+		const handlerMap: Record<RecordingState, () => string | null> = {
+			[RecordingState.IDLING]: () => {
+				if (checkIfInImage()) {
+					return null;
+				}
+				return "/idling";
+			},
+			[RecordingState.INITIALIZING]: () => "/processing",
+			[RecordingState.RECORDING]: () => "/recording",
+			[RecordingState.PROCESSING]: () => "/processing",
+			[RecordingState.PLAYBACK]: () => {
+				if (checkIfInImage()) {
+					return null;
+				}
+				return "/playback";
+			},
+		};
+
+		const newPath = handlerMap[recordingState]();
+		console.log("recording state: ", recordingState, " url: ", url, " new url: ", newPath);
 		if (newPath) {
 			setUrl(`${import.meta.env.VITE_SCREEN_BASE_URL}${newPath}`);
 		}
 	};
-	useEffect(handleChangingRecordingState, [recordingState]);
+	useEffect(handleChangingRecordingState, [recordingState, url]);
 
 	return (
 		showComponents && (
