@@ -21,7 +21,7 @@ const Section2 = () => {
 				animate={inView ? "visible" : "hidden"}
 				variants={animationVariants}
 				transition={{ duration: 0.8, ease: "easeOut" }}
-				className="text-5xl sm:text-6xl font-medium text-center mb-8"
+				className="text-4xl sm:text-5xl font-semibold text-center mb-8 text-stone-800"
 			>
 				Introducing
 			</motion.p>
