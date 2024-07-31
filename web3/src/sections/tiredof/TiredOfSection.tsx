@@ -15,7 +15,7 @@ const TiredOfSection = () => {
 	return (
 		<section
 			id="tiredof"
-			className="w-full flex flex-col justify-start items-center relative overflow-hidden gap-8 mb-16 px-8"
+			className="w-full flex flex-col justify-start items-center relative overflow-hidden gap-8 mb-16 sm:mb-24 px-8"
 		>
 			<motion.p
 				ref={ref1}
