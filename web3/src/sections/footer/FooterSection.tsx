@@ -5,7 +5,7 @@ const FooterSection = () => {
 		<div className="h-fit w-full flex flex-col justify-center items-center">
 			<p className="text-3xl">🍑</p>
 			<p className="text-2xl">Peach Pod</p>
-			<div className="flex w-full justify-center">
+			<div className="flex w-full justify-center gap-2">
 				<SocialIcon
 					url="https://x.com/getpeachpod"
 					bgColor="white"

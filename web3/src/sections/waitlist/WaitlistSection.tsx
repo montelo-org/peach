@@ -18,11 +18,13 @@ const WaitlistSection = () => {
 	return (
 		<section
 			id="waitlist"
-			className="h-[50vh] w-full flex flex-col justify-start items-center relative overflow-hidden mb-8 p-4"
+			className="h-[50vh] w-full flex flex-col justify-start items-center relative overflow-hidden p-4"
 		>
-			<p className="text-5xl sm:text-8xl font-semibold text-center mb-16">Waitlist</p>
+			<p className="text-5xl sm:text-8xl font-semibold text-center mb-8">Waitlist</p>
 
-			<p className="text-2xl sm:text-4xl font-semibold text-center mb-8">Get on the waitlist</p>
+			<p className="text-2xl sm:text-4xl text-center mb-8">
+				Be the first to experience Peach <br /> by joining our waitlist
+			</p>
 
 			<InputPlaceholders
 				placeholders={showThanks ? ["Thank you"] : ["Enter your email"]}

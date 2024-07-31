@@ -15,7 +15,7 @@ const TiredOfSection = () => {
 	return (
 		<section
 			id="tiredof"
-			className="w-full flex flex-col justify-start items-center relative overflow-hidden gap-8 mb-16 px-4"
+			className="w-full flex flex-col justify-start items-center relative overflow-hidden gap-8 mb-16 px-8"
 		>
 			<motion.p
 				ref={ref1}
@@ -33,7 +33,7 @@ const TiredOfSection = () => {
 				animate={inView2 ? "visible" : "hidden"}
 				variants={animationVariants}
 				transition={{ duration: 0.5 }}
-				className="flex justify-center items-center h-[40vh] sm:h-[50vh] gap-2 sm:gap-8"
+				className="flex justify-center items-center h-[30vh] gap-2 sm:gap-8"
 			>
 				<p className="text-3xl sm:text-6xl font-medium max-w-[40rem]">AIs that don't work</p>
 				<img src="/homepod_mini.png" alt="Homepod mini" className="h-28 sm:h-48" />
@@ -44,7 +44,7 @@ const TiredOfSection = () => {
 				animate={inView3 ? "visible" : "hidden"}
 				variants={animationVariants}
 				transition={{ duration: 0.5 }}
-				className="flex justify-center items-center h-[40vh] sm:h-[50vh] gap-2 sm:gap-8"
+				className="flex justify-center items-center h-[30vh] gap-2 sm:gap-8"
 			>
 				<img src="/amazon_echo.jpg" alt="Amazon echo" className="h-32 sm:h-52" />
 				<p className="text-3xl sm:text-6xl font-medium max-w-[40rem]">Devices that spy on us</p>
@@ -55,7 +55,7 @@ const TiredOfSection = () => {
 				animate={inView4 ? "visible" : "hidden"}
 				variants={animationVariants}
 				transition={{ duration: 0.5 }}
-				className="flex justify-center items-center h-[40vh] sm:h-[50vh] gap-2 sm:gap-8"
+				className="flex justify-center items-center h-[30vh] gap-2 sm:gap-8"
 			>
 				<p className="text-3xl sm:text-6xl font-medium max-w-[40rem]">
 					Companies that push ideologies
