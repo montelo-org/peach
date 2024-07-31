@@ -1,0 +1,196 @@
+import { motion } from "framer-motion";
+import { useInView } from "react-intersection-observer";
+import { BentoGridItem } from "./BentoGridItem";
+
+const Section2 = () => {
+	const [ref, inView] = useInView({ triggerOnce: true, threshold: 0.1 });
+
+	const animationVariants = {
+		hidden: { opacity: 0, y: 50 },
+		visible: { opacity: 1, y: 0 },
+	};
+
+	return (
+		<section
+			id="section2"
+			className="w-full flex flex-col justify-start items-center relative overflow-hidden mb-16 p-4"
+		>
+			<motion.p
+				ref={ref}
+				initial="hidden"
+				animate={inView ? "visible" : "hidden"}
+				variants={animationVariants}
+				transition={{ duration: 0.8, ease: "easeOut" }}
+				className="text-5xl sm:text-6xl font-medium text-center mb-8"
+			>
+				Introducing
+			</motion.p>
+
+			<motion.p
+				ref={ref}
+				initial="hidden"
+				animate={inView ? "visible" : "hidden"}
+				variants={animationVariants}
+				transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 }}
+				className="text-5xl sm:text-8xl font-semibold text-center mb-16"
+			>
+				🍑 Peach Pod
+			</motion.p>
+
+			<div className="grid grid-cols-2 sm:grid-cols-12 sm:grid-rows-12 gap-4 w-full justify-center items-center sm:h-[95vh] h-fit">
+				<BentoGridItem
+					className="col-span-2 sm:col-span-3 sm:row-span-6 h-full w-full"
+					header={
+						<div className="flex flex-col items-center text-center h-full divide-y-2 justify-between py-4">
+							<div className="flex justify-center items-center h-full">
+								<p className="text-2xl font-bold">
+									<span className="bg-gradient-to-r from-orange-400 to-orange-600 text-transparent bg-clip-text">
+										Hey Peach
+									</span>
+									, give me a spicy would you rather question
+								</p>
+							</div>
+							<div className="flex justify-center items-center h-full">
+								<p className="text-2xl font-bold">
+									<span className="bg-gradient-to-r from-orange-400 to-orange-600 text-transparent bg-clip-text">
+										Hey Peach
+									</span>
+									, where should I take my date?
+								</p>
+							</div>
+							<div className="flex justify-center items-center h-full">
+								<p className="text-2xl font-bold">
+									<span className="bg-gradient-to-r from-orange-400 to-orange-600 text-transparent bg-clip-text">
+										Hey Peach
+									</span>
+									, what's a substitute for lime?
+								</p>
+							</div>
+						</div>
+					}
+				/>
+				<BentoGridItem
+					className="col-span-1 sm:col-span-3 sm:row-span-3 h-full w-full bg-stone-50"
+					header={
+						<div className="flex flex-col justify-center items-center h-full gap-2">
+							<img src="uncensored.png" alt="Uncensored" className="w-full h-1/2 object-contain" />
+							<p className="text-2xl font-bold">
+								Ask 🍑{" "}
+								<span className="italic underline underline-offset-8 decoration-4">anything</span>
+							</p>
+						</div>
+					}
+				/>
+				<BentoGridItem
+					className="col-span-1 sm:col-span-3 sm:row-span-3 h-full w-full relative"
+					header={
+						<div className="flex flex-col justify-center items-center h-full w-full">
+							<img
+								src="art.png"
+								alt="Art"
+								className="absolute inset-0 w-full h-full object-cover rounded-xl brightness-80"
+							/>
+							<p className="text-2xl font-medium relative z-10 text-white text-center">
+								Display art that{" "}
+								<span className="italic underline underline-offset-8 decoration-4 font-bold">
+									you
+								</span>{" "}
+								create
+							</p>
+						</div>
+					}
+				/>
+				<BentoGridItem
+					className="col-span-2 sm:col-span-3 sm:row-span-6 h-full w-full bg-gradient-to-br from-stone-50 from-20% via-purple-500 to-red-500"
+					header={
+						<div className="flex items-center h-full">
+							<p className="text-5xl font-bold flex flex-col bg-gradient-to-b from-stone-800 to-stone-600 text-transparent bg-clip-text">
+								<span>Your data</span>
+								<span>is stored</span>
+								<span>on device</span>
+								<span className="underline underline-offset-8 decoration-stone-600 decoration-8">
+									only.
+								</span>
+							</p>
+						</div>
+					}
+				/>
+				<BentoGridItem
+					className="col-span-2 sm:col-span-6 sm:row-span-6 h-full w-full"
+					header={
+						<div className="h-full flex justify-center items-center">
+							<img
+								src="peach_render.png"
+								alt="Peach render"
+								className="w-full h-full object-contain transition-transform duration-300 group-hover/bento:scale-105"
+							/>
+						</div>
+					}
+				/>
+				<BentoGridItem
+					className="sm:col-span-3 sm:row-span-3 h-full w-full bg-gradient-to-r from-red-600 to-orange-400"
+					header={
+						<div className="flex flex-col gap-1 justify-center items-center h-full">
+							<p className="text-2xl font-bold bg-gradient-to-r from-stone-50 to-stone-300 text-transparent bg-clip-text">
+								Play games
+							</p>
+							<div className="flex flex-col sm:flex-row w-full h-full justify-center items-center">
+								<p className="text-xl bg-gradient-to-r from-stone-50 to-stone-300 text-transparent bg-clip-text flex-1 text-center">
+									Trivia Questions
+								</p>
+								<p className="text-xl bg-gradient-to-r from-stone-50 to-stone-300 text-transparent bg-clip-text flex-1 text-center">
+									True or False
+								</p>
+								<p className="text-xl bg-gradient-to-r from-stone-50 to-stone-300 text-transparent bg-clip-text flex-1 text-center">
+									Guess that song
+								</p>
+							</div>
+						</div>
+					}
+				/>
+				<BentoGridItem
+					className="sm:col-span-3 sm:row-span-6 h-full w-full"
+					header={
+						<div className="flex flex-col gap-8 justify-center items-center h-full">
+							<p className="text-3xl font-medium text-center">
+								🍑 is the first fun and entertaining AI for your home
+							</p>
+							<p className="text-3xl font-medium text-center">Built on open models</p>
+						</div>
+					}
+				/>
+				<BentoGridItem
+					className="col-span-2 sm:col-span-6 sm:row-span-3 h-full w-full relative"
+					header={
+						<div className="flex flex-col justify-center items-center h-full w-full">
+							<img
+								src="companion.png"
+								alt="Art"
+								className="absolute inset-0 w-full h-full object-cover rounded-xl brightness-80"
+							/>
+							<p className="text-3xl font-medium relative z-10 text-white text-center">
+								More than an assistant
+							</p>
+							<p className="text-3xl font-medium relative z-10 text-white text-center">
+								Peach is a{" "}
+								<span className="underline underline-offset-8 decoration-4">companion</span>
+							</p>
+						</div>
+					}
+				/>
+				<BentoGridItem
+					className="sm:col-span-3 sm:row-span-3 h-full w-full bg-stone-50"
+					header={
+						<div className="h-full w-full flex justify-center items-center">
+							<p className="text-4xl font-semibold bg-gradient-to-r from-purple-500 to-pink-500 text-transparent bg-clip-text">
+								Premium Design
+							</p>
+						</div>
+					}
+				/>
+			</div>
+		</section>
+	);
+};
+
+export default Section2;

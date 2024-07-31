@@ -1,7 +1,7 @@
-import type { MouseEventHandler } from "react";
-import { useEffect, useRef, useState } from "react";
 import { useProgress } from "@react-three/drei";
 import { InfoIcon } from "lucide-react";
+import type { MouseEventHandler } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const PreOrderBtn = ({
 	children,
@@ -13,12 +13,12 @@ const PreOrderBtn = ({
       active:translate-y-2  active:[box-shadow:0_0px_0_0_#cc8a33,0_0px_0_0_#ffbd6691]
       active:border-b-[0px]
       transition-all duration-100 [box-shadow:0_10px_0_0_#cc8a33,0_15px_0_0_#ffbd6691]
-      rounded-full border-[1px] border-peach-light ${className}`}
+      rounded-full border-[1px] border-orange-200 ${className}`}
 		onClick={onClick}
 		role="button"
 		tabIndex={0}
 	>
-		<span className="flex flex-col justify-center items-center h-full text-white font-bold">
+		<span className="flex flex-col justify-center items-center h-full text-white font-semibold">
 			{children}
 		</span>
 	</div>
@@ -39,7 +39,7 @@ const HelpBtn = ({
 		role="button"
 		tabIndex={0}
 	>
-		<span className="flex flex-col justify-center items-center h-full text-white font-bold">
+		<span className="flex flex-col justify-center items-center h-full text-white font-semibold">
 			{children}
 		</span>
 	</div>
@@ -80,9 +80,7 @@ const Modal = ({
 				className="bg-white rounded-xl p-6 max-w-xl w-full max-h-[90vh] overflow-y-auto shadow"
 			>
 				<div className="flex justify-between items-start mb-4">
-					<h2 className="text-xl font-bold">
-						What is <span className={"font-pacifico text-peach"}>Peach</span> 🍑?
-					</h2>
+					<h2 className="text-xl font-semibold">What is Peach?</h2>
 					<button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-700">
 						✕
 					</button>

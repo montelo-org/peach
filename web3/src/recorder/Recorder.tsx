@@ -1,11 +1,17 @@
-import { type MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
-import { LoaderCircle, Mic, Square } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { audioWorkletCode } from "./audioWorklet.ts";
-import { RecordingState } from "./RecordingState.ts";
-import { CHANNELS, FRAMES_PER_BUFFER, MAX_RECORDING_DURATION, MESSAGES, SAMPLE_RATE, } from "./constants.ts";
 import { useProgress } from "@react-three/drei";
+import { useQuery } from "@tanstack/react-query";
+import { LoaderCircle, Mic, Square } from "lucide-react";
+import { type MouseEventHandler, useCallback, useEffect, useRef, useState } from "react";
 import { useScreenContentCtx } from "../contexts/ScreenContentCtx.tsx";
+import { RecordingState } from "./RecordingState.ts";
+import { audioWorkletCode } from "./audioWorklet.ts";
+import {
+	CHANNELS,
+	FRAMES_PER_BUFFER,
+	MAX_RECORDING_DURATION,
+	MESSAGES,
+	SAMPLE_RATE,
+} from "./constants.ts";
 
 export const Recorder = () => {
 	// three progress
@@ -441,10 +447,7 @@ export const Recorder = () => {
 
 	return (
 		showComponents && (
-			<div
-				className={"absolute bottom-8 left-1/2 transform -translate-x-1/2"}
-				style={{ zIndex: "19999999" }}
-			>
+			<div className={"flex flex-col"}>
 				<div
 					className={`w-16 h-16 rounded-full select-none transition-all duration-100 mx-auto
 				[box-shadow:0_8px_0_0_#f81b22,0_13px_0_0_#f7404641] border-[1px] border-red-400
@@ -452,11 +455,11 @@ export const Recorder = () => {
 			 ${whiteBackground ? "bg-white" : "bg-red-500"}`}
 					onClick={handleClick}
 				>
-					<span className="flex flex-col justify-center items-center h-full text-white font-bold text-lg">
+					<span className="flex flex-col justify-center items-center h-full text-white font-semibold text-lg">
 						<div>{ComponentMap[recordingState]}</div>
 					</span>
 				</div>
-				<p className={"mt-4 text-white mx-auto font-medium"}>{SubtitleTextMap[recordingState]}</p>
+				<p className={"mt-4 mx-auto font-medium"}>{SubtitleTextMap[recordingState]}</p>
 			</div>
 		)
 	);

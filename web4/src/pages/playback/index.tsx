@@ -130,7 +130,7 @@ export default function PlaybackPage() {
 	useWaveformAnimation(canvasRef);
 
 	return (
-		<main className="w-screen h-screen flex flex-col items-center justify-center bg-gray-900">
+		<main className="w-screen h-screen flex flex-col items-center justify-center bg-black">
 			<canvas ref={canvasRef} width={400} height={200} className="rounded-[50px] mb-1" />
 		</main>
 	);

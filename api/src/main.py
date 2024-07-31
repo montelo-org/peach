@@ -363,10 +363,8 @@ async def transcribe_stream(ws: WebSocket):
             return dict(content=content, tool_name=None, tool_res=None)
 
     def hardcoded_ai(transcription: str, messages) -> dict[str, str]:
-        time.sleep(0.5)
         return dict(
-            content="Here's your image",
-            image_url="https://media-cldnry.s-nbcnews.com/image/upload/t_focal-560x280,f_avif,q_auto:eco,dpr_2/rockcms/2024-07/240713-donald-trump-rally-violence-5-se-757p-4dedf7.jpg",
+            content="Would you rather be tied up or do the tying?",
         )
 
     async def elevenlabs_speech(ws: WebSocket, ai_response: str):
@@ -469,8 +467,8 @@ async def transcribe_stream(ws: WebSocket):
 
         try:
             if full_transcription is not None and full_transcription != "":
-                ai_response = ai(full_transcription, messages)
-                # ai_response = hardcoded_ai(full_transcription, messages)
+                # ai_response = ai(full_transcription, messages)
+                ai_response = hardcoded_ai(full_transcription, messages)
             else:
                 raise Exception("No transcription found")
         except Exception as e:
