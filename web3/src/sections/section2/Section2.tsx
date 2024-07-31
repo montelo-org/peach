@@ -32,14 +32,14 @@ const Section2 = () => {
 				animate={inView ? "visible" : "hidden"}
 				variants={animationVariants}
 				transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 }}
-				className="text-7xl sm:text-8xl font-semibold text-center mb-16"
+				className="text-7xl sm:text-8xl font-semibold text-center mb-4"
 			>
 				🍑 Peach Pod
 			</motion.p>
 
-			<div className="grid grid-cols-2 sm:grid-cols-12 sm:grid-rows-12 gap-4 w-full justify-center items-center sm:h-[95vh] h-fit">
+			<div className="grid grid-cols-2 sm:grid-cols-12 sm:grid-rows-12 gap-4 w-full justify-center items-center sm:h-[95vh]">
 				<BentoGridItem
-					className="col-span-2 sm:col-span-3 sm:row-span-6 h-full w-full"
+					className="col-span-2 sm:col-span-3 sm:row-span-6 h-full w-full min-h-96 sm:min-h-fit"
 					header={
 						<div className="flex flex-col items-center text-center h-full divide-y-2 justify-between py-4">
 							<div className="flex justify-center items-center h-full">
@@ -129,20 +129,20 @@ const Section2 = () => {
 					}
 				/>
 				<BentoGridItem
-					className="sm:col-span-3 sm:row-span-3 h-full w-full bg-stone-50 py-8"
+					className="col-span-2 sm:col-span-3 sm:row-span-3 h-full w-full bg-stone-50 py-8"
 					header={
 						<div className="flex flex-col gap-1 justify-center items-center h-full">
-							<p className="text-2xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-transparent bg-clip-text">
+							<p className="text-3xl text-center font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-transparent bg-clip-text">
 								Play Your Favorite Games
 							</p>
-							<div className="flex flex-col sm:flex-row w-full h-full justify-center items-center">
-								<p className="text-lg bg-gradient-to-r from-stone-500 to-stone-600 text-transparent bg-clip-text flex-1 text-center">
+							<div className="flex flex-row w-full h-full justify-center items-center">
+								<p className="text-xl bg-gradient-to-r from-stone-500 to-stone-600 text-transparent bg-clip-text flex-1 text-center">
 									Trivia
 								</p>
-								<p className="text-lg bg-gradient-to-r from-stone-500 to-stone-600 text-transparent bg-clip-text flex-1 text-center">
+								<p className="text-xl bg-gradient-to-r from-stone-500 to-stone-600 text-transparent bg-clip-text flex-1 text-center">
 									True or False
 								</p>
-								<p className="text-lg bg-gradient-to-r from-stone-500 to-stone-600 text-transparent bg-clip-text flex-1 text-center">
+								<p className="text-xl bg-gradient-to-r from-stone-500 to-stone-600 text-transparent bg-clip-text flex-1 text-center">
 									Song Quiz
 								</p>
 							</div>
@@ -150,7 +150,7 @@ const Section2 = () => {
 					}
 				/>
 				<BentoGridItem
-					className="sm:col-span-3 sm:row-span-6 h-full w-full"
+					className="col-span-2 sm:col-span-3 sm:row-span-6 h-full w-full"
 					header={
 						<div className="flex flex-col gap-8 justify-center items-center h-full">
 							<p className="text-3xl font-medium text-center">
@@ -161,7 +161,7 @@ const Section2 = () => {
 					}
 				/>
 				<BentoGridItem
-					className="col-span-2 sm:col-span-6 sm:row-span-3 h-full w-full relative"
+					className="col-span-2 sm:col-span-6 sm:row-span-3 h-full w-full relative min-h-64 sm:min-h-fit"
 					header={
 						<div className="flex flex-col justify-center items-center h-full w-full">
 							<img
@@ -180,7 +180,7 @@ const Section2 = () => {
 					}
 				/>
 				<BentoGridItem
-					className="sm:col-span-3 sm:row-span-3 h-full w-full bg-stone-50"
+					className="sm:col-span-3 sm:row-span-3 h-full w-full bg-stone-50 hidden sm:visible"
 					header={
 						<div className="h-full w-full flex justify-center items-center">
 							<p className="text-4xl font-semibold bg-gradient-to-r from-purple-500 to-pink-500 text-transparent bg-clip-text">
