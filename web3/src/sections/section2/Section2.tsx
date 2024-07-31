@@ -180,7 +180,7 @@ const Section2 = () => {
 					}
 				/>
 				<BentoGridItem
-					className="sm:col-span-3 sm:row-span-3 h-full w-full bg-stone-50 hidden sm:visible"
+					className="sm:col-span-3 sm:row-span-3 h-full w-full bg-stone-50 hidden sm:flex"
 					header={
 						<div className="h-full w-full flex justify-center items-center">
 							<p className="text-4xl font-semibold bg-gradient-to-r from-purple-500 to-pink-500 text-transparent bg-clip-text">
