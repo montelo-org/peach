@@ -18,7 +18,7 @@ const WaitlistSection = () => {
 	return (
 		<section
 			id="waitlist"
-			className="h-[50vh] w-full flex flex-col justify-start items-center relative overflow-hidden p-4"
+			className="h-[40vh] sm:h-[50vh] w-full flex flex-col justify-start items-center relative overflow-hidden p-4"
 		>
 			<p className="text-5xl sm:text-8xl font-semibold text-center mb-8">Waitlist</p>
 

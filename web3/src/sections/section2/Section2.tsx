@@ -101,16 +101,17 @@ const Section2 = () => {
 					}
 				/>
 				<BentoGridItem
-					className="col-span-2 sm:col-span-3 sm:row-span-6 h-full w-full bg-gradient-to-br from-stone-50 from-20% via-purple-500 to-red-500"
+					className="col-span-2 sm:col-span-3 sm:row-span-6 h-full w-full bg-gradient-to-br from-stone-50 from-20% via-stone-300 to-stone-50"
 					header={
 						<div className="flex items-center h-full">
 							<p className="text-5xl font-bold flex flex-col bg-gradient-to-b from-stone-800 to-stone-600 text-transparent bg-clip-text">
 								<span>Your data</span>
 								<span>is stored</span>
-								<span>on device</span>
 								<span className="underline underline-offset-8 decoration-stone-600 decoration-8">
-									only.
+									on device.
 								</span>
+								<span className="mt-4">Not on</span>
+								<span>our servers.</span>
 							</p>
 						</div>
 					}
@@ -128,21 +129,21 @@ const Section2 = () => {
 					}
 				/>
 				<BentoGridItem
-					className="sm:col-span-3 sm:row-span-3 h-full w-full bg-gradient-to-r from-red-600 to-orange-400"
+					className="sm:col-span-3 sm:row-span-3 h-full w-full bg-stone-50 py-8"
 					header={
 						<div className="flex flex-col gap-1 justify-center items-center h-full">
-							<p className="text-2xl font-bold bg-gradient-to-r from-stone-50 to-stone-300 text-transparent bg-clip-text">
-								Play games
+							<p className="text-2xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-transparent bg-clip-text">
+								Play Your Favorite Games
 							</p>
 							<div className="flex flex-col sm:flex-row w-full h-full justify-center items-center">
-								<p className="text-xl bg-gradient-to-r from-stone-50 to-stone-300 text-transparent bg-clip-text flex-1 text-center">
-									Trivia Questions
+								<p className="text-lg bg-gradient-to-r from-stone-500 to-stone-600 text-transparent bg-clip-text flex-1 text-center">
+									Trivia
 								</p>
-								<p className="text-xl bg-gradient-to-r from-stone-50 to-stone-300 text-transparent bg-clip-text flex-1 text-center">
+								<p className="text-lg bg-gradient-to-r from-stone-500 to-stone-600 text-transparent bg-clip-text flex-1 text-center">
 									True or False
 								</p>
-								<p className="text-xl bg-gradient-to-r from-stone-50 to-stone-300 text-transparent bg-clip-text flex-1 text-center">
-									Guess that song
+								<p className="text-lg bg-gradient-to-r from-stone-500 to-stone-600 text-transparent bg-clip-text flex-1 text-center">
+									Song Quiz
 								</p>
 							</div>
 						</div>
