@@ -1,41 +1,16 @@
-import { motion } from "framer-motion";
-import { useInView } from "react-intersection-observer";
 import { BentoGridItem } from "./BentoGridItem";
 
 const Section2 = () => {
-	const [ref, inView] = useInView({ triggerOnce: true, threshold: 0.1 });
-
-	const animationVariants = {
-		hidden: { opacity: 0, y: 50 },
-		visible: { opacity: 1, y: 0 },
-	};
-
 	return (
 		<section
 			id="section2"
 			className="w-full flex flex-col justify-start items-center relative overflow-hidden mb-16 p-4"
 		>
-			<motion.p
-				ref={ref}
-				initial="hidden"
-				animate={inView ? "visible" : "hidden"}
-				variants={animationVariants}
-				transition={{ duration: 0.8, ease: "easeOut" }}
-				className="text-5xl sm:text-6xl font-semibold text-center mb-8 text-stone-800"
-			>
+			<p className="text-5xl sm:text-6xl font-semibold text-center mb-8 text-stone-800">
 				Introducing
-			</motion.p>
+			</p>
 
-			<motion.p
-				ref={ref}
-				initial="hidden"
-				animate={inView ? "visible" : "hidden"}
-				variants={animationVariants}
-				transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 }}
-				className="text-7xl sm:text-8xl font-semibold text-center mb-4"
-			>
-				🍑 Peach Pod
-			</motion.p>
+			<p className="text-7xl sm:text-8xl font-semibold text-center mb-4">🍑 Peach Pod</p>
 
 			<div className="grid grid-cols-2 sm:grid-cols-12 sm:grid-rows-12 gap-4 w-full justify-center items-center sm:h-[95vh]">
 				<BentoGridItem
