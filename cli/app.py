@@ -149,13 +149,13 @@ async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
     logging.info("Start speaking")
 
     duration = 30
-    silence_count_limit = 50
+    silence_count_limit = 30
 
     start_time = time.time()
     recorded_data = []
     initial_record_time = 0.7
     volumes = []
-    silence_threshold = 300
+    silence_threshold = 1000
     silence_counter = 0
     buffer_duration = 0.5
     buffer_frames = []
