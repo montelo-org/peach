@@ -16,7 +16,7 @@ export default function WouldyouratherPage() {
 	useEffect(() => {
 		const handleKeyPress = (event: KeyboardEvent) => {
 			if (event.code === "Space") {
-				navigate(`/generate_image?imageUrl=${encodeURIComponent("blob:https://app.prodia.com/ec5f7ad3-40c0-407a-af9c-fe2768990049")}`);
+				navigate(`/generate_image?imageUrl=${encodeURIComponent("https://cdn.midjourney.com/ea34ce78-1768-4a06-b759-45bf12c4be84/0_0.png")}`);
 			}
 		};
 
