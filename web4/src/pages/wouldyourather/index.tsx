@@ -1,4 +1,5 @@
-import { useSearchParams } from "react-router-dom";
+import { useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 export default function WouldyouratherPage() {
 	const [searchParams] = useSearchParams();
@@ -9,6 +10,22 @@ export default function WouldyouratherPage() {
 	if (!option1 || !option2) {
 		return <p>No options found</p>;
 	}
+
+	const navigate = useNavigate();
+
+	useEffect(() => {
+		const handleKeyPress = (event: KeyboardEvent) => {
+			if (event.code === "Space") {
+				navigate(`/generate_image?imageUrl=${encodeURIComponent("blob:https://app.prodia.com/ec5f7ad3-40c0-407a-af9c-fe2768990049")}`);
+			}
+		};
+
+		window.addEventListener("keydown", handleKeyPress);
+
+		return () => {
+			window.removeEventListener("keydown", handleKeyPress);
+		};
+	}, [navigate]);
 
 	return (
 		<main className="w-screen h-screen flex flex-col relative">
