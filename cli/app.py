@@ -26,19 +26,21 @@ from halo import Halo
 from pvrecorder import PvRecorder
 
 handler = colorlog.StreamHandler()
-handler.setFormatter(colorlog.ColoredFormatter(
-    "%(log_color)s%(asctime)s - %(funcName)s - %(message)s",
-    datefmt="%H:%M:%S",
-    log_colors={
-        "DEBUG": "cyan",
-        "INFO": "green",
-        "WARNING": "yellow",
-        "ERROR": "red",
-        "CRITICAL": "bold_red,bg_white",
-    },
-    secondary_log_colors={},
-    style="%"
-))
+handler.setFormatter(
+    colorlog.ColoredFormatter(
+        "%(log_color)s%(asctime)s - %(funcName)s - %(message)s",
+        datefmt="%H:%M:%S",
+        log_colors={
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "bold_red,bg_white",
+        },
+        secondary_log_colors={},
+        style="%",
+    )
+)
 
 logger = colorlog.getLogger()
 logger.addHandler(handler)
@@ -144,7 +146,9 @@ async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
     await asyncio.sleep(0.01)
 
     ui_audio_queue = asyncio.Queue()
-    play_audio(random.choice(["data/s1.mp3", "data/s2.mp3", "data/s3.mp3", "data/s4.mp3"]))
+    play_audio(
+        random.choice(["data/s1.mp3", "data/s2.mp3", "data/s3.mp3", "data/s4.mp3"])
+    )
 
     logging.info("Start speaking")
 
@@ -164,10 +168,7 @@ async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
 
     async def send_audio_data(audio_data, event_type):
         audio_base64 = base64.b64encode(audio_data.tobytes()).decode("utf-8")
-        message = json.dumps({
-            "event": event_type,
-            "audio": audio_base64
-        })
+        message = json.dumps({"event": event_type, "audio": audio_base64})
         await queue.put(message)
         await ui_audio_queue.put(message)
 
@@ -187,8 +188,12 @@ async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
 
         if len(buffer_frames) >= frames_per_buffer:
             # Only use the latest frames_per_buffer frames
-            buffer_to_send = np.array(buffer_frames[-frames_per_buffer:], dtype=np.int16)
-            await asyncio.create_task(send_audio_data(buffer_to_send, WsEvent.AUDIO_UPDATE.value))
+            buffer_to_send = np.array(
+                buffer_frames[-frames_per_buffer:], dtype=np.int16
+            )
+            await asyncio.create_task(
+                send_audio_data(buffer_to_send, WsEvent.AUDIO_UPDATE.value)
+            )
             buffer_frames = buffer_frames[frames_per_buffer:]
 
         # Collect volumes for initial period to set threshold
@@ -215,22 +220,30 @@ async def listen_and_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
         await asyncio.sleep(0.02)
 
     ui_state = UIStates.PROCESSING
-    end_event_payload = json.dumps({
-        "event": WsEvent.AUDIO_END.value,
-    })
+    end_event_payload = json.dumps(
+        {
+            "event": WsEvent.AUDIO_END.value,
+        }
+    )
     await queue.put(end_event_payload)
     await ui_audio_queue.put(end_event_payload)
 
-    await queue.put(json.dumps({
-        "event": WsEvent.SEND_MESSAGES.value,
-        "messages": messages,
-    }))
+    await queue.put(
+        json.dumps(
+            {
+                "event": WsEvent.SEND_MESSAGES.value,
+                "messages": messages,
+            }
+        )
+    )
 
     # closes the websocket_sender
     await queue.put(None)
 
 
-async def api_websocket_sender(queue: asyncio.Queue, ws: websockets.WebSocketClientProtocol):
+async def api_websocket_sender(
+    queue: asyncio.Queue, ws: websockets.WebSocketClientProtocol
+):
     try:
         while True:
             # Optionally check if the websocket is still open
@@ -243,7 +256,9 @@ async def api_websocket_sender(queue: asyncio.Queue, ws: websockets.WebSocketCli
                 break
 
             logging.info("[socket send]")
-            await ws.send(data)  # This can throw an exception if the websocket is closed.
+            await ws.send(
+                data
+            )  # This can throw an exception if the websocket is closed.
             await asyncio.sleep(0.01)
     except websockets.exceptions.ConnectionClosed as e:
         logging.error(f"WebSocket connection closed unexpectedly: {e}")
@@ -257,7 +272,7 @@ async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
     global messages
     global ui_state
     elevenlabs_framerate = 24000
-    stream = sd.OutputStream(samplerate=elevenlabs_framerate, channels=1, dtype='int16')
+    stream = sd.OutputStream(samplerate=elevenlabs_framerate, channels=1, dtype="int16")
     stream.start()
 
     try:
@@ -318,7 +333,9 @@ async def record_thread() -> None:
         global ui_state
         ui_state = UIStates.IDLING
 
-        api_websocket_url = f"wss://{os.getenv("PEACH_API_URL").replace("https://", "")}/ws"
+        api_websocket_url = (
+            f"wss://{os.getenv("PEACH_API_URL").replace("https://", "")}/ws"
+        )
 
         while True:
             pcm = recorder.read()
@@ -361,13 +378,17 @@ async def main():
     correct_frame_length = 512
     correct_sample_rate = 16000
     if recorder_frame_length != correct_frame_length:
-        logging.error(f"Frame length is {recorder_frame_length}, but should be {correct_frame_length}")
+        logging.error(
+            f"Frame length is {recorder_frame_length}, but should be {correct_frame_length}"
+        )
         exit(1)
     else:
         logging.info(f"✅ Recorder frame length {recorder_frame_length}")
 
     if recorder_sample_rate != correct_sample_rate:
-        logging.error(f"Sample rate is {recorder_sample_rate}, but should be {correct_sample_rate}")
+        logging.error(
+            f"Sample rate is {recorder_sample_rate}, but should be {correct_sample_rate}"
+        )
         exit(1)
     else:
         logging.info(f"✅ Sample rate {recorder_sample_rate}")

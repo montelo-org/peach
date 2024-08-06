@@ -17,7 +17,7 @@ web_app = FastAPI()
 origins = [
     "http://localhost:5173",
     "https://getpeachpod.pages.dev",
-    "https://getpeachpod.com"
+    "https://getpeachpod.com",
 ]
 
 web_app.add_middleware(
@@ -59,7 +59,13 @@ image = (
     )
     .apt_install("ffmpeg", "portaudio19-dev")
     .pip_install(
-        "faster-whisper", "pydub", "groq", "elevenlabs", "soundfile", "cartesia", "openai"
+        "faster-whisper",
+        "pydub",
+        "groq",
+        "elevenlabs",
+        "soundfile",
+        "cartesia",
+        "openai",
     )
     .run_function(
         download_models, gpu=gpu.A10G(), secrets=[Secret.from_name(secret_name)]
@@ -135,10 +141,10 @@ async def transcribe_stream(ws: WebSocket):
         while True:
             if num_tries >= 30:
                 return "Image could not be generated"
-            response = requests.get(f"https://api.prodia.com/v1/job/{job}", headers={
-                "accept": "application/json",
-                "X-Prodia-Key": prodia_key
-            })
+            response = requests.get(
+                f"https://api.prodia.com/v1/job/{job}",
+                headers={"accept": "application/json", "X-Prodia-Key": prodia_key},
+            )
             data = response.json()
             print("job: ", data)
             status = data["status"]
@@ -150,6 +156,7 @@ async def transcribe_stream(ws: WebSocket):
             time.sleep(0.5)
 
     def would_you_rather(prompt):
+        return "Would you rather have passionate sex in an exotic location or have a cozy night in with your partner?"
         max_retries = 3
 
         for attempt in range(max_retries):
@@ -176,18 +183,18 @@ async def transcribe_stream(ws: WebSocket):
     Answer: "{\n  option1: "Have hands as feet",\n  option2: "Have feet for hands"\n}"
     
     Do NOT forget to respond in valid JSON format.
-    """
+    """,
                         },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
+                        {"role": "user", "content": prompt},
                     ],
                     response_format={"type": "json_object"},
                 )
                 return completion.choices[0].message.content
             except Exception as e:
-                print(f"Error in would you rather call (attempt {attempt + 1}/{max_retries}):", e)
+                print(
+                    f"Error in would you rather call (attempt {attempt + 1}/{max_retries}):",
+                    e,
+                )
                 if attempt >= max_retries - 1:
                     return "Sorry, an error occurred."
 
@@ -196,7 +203,8 @@ async def transcribe_stream(ws: WebSocket):
         longitude = "79.3832"
         city = "Toronto"
         res = requests.get(
-            f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,is_day,rain&forecast_days=1")
+            f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,is_day,rain&forecast_days=1"
+        )
         res = res.json()
         temperature = res["current"]["temperature_2m"]
         is_day = res["current"]["is_day"]
@@ -251,10 +259,10 @@ async def transcribe_stream(ws: WebSocket):
                         )
                         break
                     elif (
-                            # last speech end time
-                            inactivity_window_seconds
-                            - timestamps[-1]["end"] / SAMPLES_PER_SECOND
-                            >= max_inactivity_seconds
+                        # last speech end time
+                        inactivity_window_seconds
+                        - timestamps[-1]["end"] / SAMPLES_PER_SECOND
+                        >= max_inactivity_seconds
                     ):
                         print(
                             f"Not enough speech in the last {inactivity_window_seconds} seconds."
@@ -310,7 +318,7 @@ async def transcribe_stream(ws: WebSocket):
                             },
                             "required": ["prompt"],
                         },
-                    }
+                    },
                 },
                 {
                     "type": "function",
@@ -318,8 +326,8 @@ async def transcribe_stream(ws: WebSocket):
                         "name": "get_weather",
                         "description": "Gets the weather for a location.",
                         "parameters": {},
-                    }
-                }
+                    },
+                },
             ],
             tool_choice="auto",
             max_tokens=300,
@@ -339,12 +347,18 @@ async def transcribe_stream(ws: WebSocket):
             print("Function call: ", function_name)
             function_to_call = tool_map[function_name]
             function_args = json.loads(tool_call.function.arguments)
-            print("Calling: ", function_name, " with args ", tool_call.function.arguments)
+            print(
+                "Calling: ", function_name, " with args ", tool_call.function.arguments
+            )
             function_response = function_to_call(**function_args)
             print("Function response: ", function_response)
 
             if function_name == "generate_image":
-                return dict(content="Here's your image", tool_name=function_name, tool_res=function_response)
+                return dict(
+                    content="Here's your image",
+                    tool_name=function_name,
+                    tool_res=function_response,
+                )
             elif function_name == "would_you_rather":
                 parsed = json.loads(function_response)
                 option1 = parsed["option1"]
@@ -355,11 +369,13 @@ async def transcribe_stream(ws: WebSocket):
                 return dict(
                     content=function_response["response"],
                     tool_name=function_name,
-                    tool_res=function_response
+                    tool_res=function_response,
                 )
         else:
             print("No tool call")
-            content = completion.choices[0].message.content or "Sorry something went wrong."
+            content = (
+                completion.choices[0].message.content or "Sorry something went wrong."
+            )
             return dict(content=content, tool_name=None, tool_res=None)
 
     def hardcoded_ai(transcription: str, messages) -> dict[str, str]:
@@ -420,11 +436,11 @@ async def transcribe_stream(ws: WebSocket):
 
         try:
             for output in cartesia_ws.send(
-                    model_id=model_id,
-                    transcript=ai_response,
-                    voice_embedding=globals["voice"]["embedding"],
-                    stream=True,
-                    output_format=output_format,
+                model_id=model_id,
+                transcript=ai_response,
+                voice_embedding=globals["voice"]["embedding"],
+                stream=True,
+                output_format=output_format,
             ):
                 buffer = output["audio"]
                 await ws.send_bytes(buffer)
@@ -467,14 +483,17 @@ async def transcribe_stream(ws: WebSocket):
 
         try:
             if full_transcription is not None and full_transcription != "":
-                # ai_response = ai(full_transcription, messages)
-                ai_response = hardcoded_ai(full_transcription, messages)
+                ai_response = ai(full_transcription, messages)
+                # ai_response = hardcoded_ai(full_transcription, messages)
             else:
                 raise Exception("No transcription found")
         except Exception as e:
             print(e)
-            ai_response = dict(content="Sorry, something went wrong! Could you try again later?", tool_name=None,
-                               tool_res=None)
+            ai_response = dict(
+                content="Sorry, something went wrong! Could you try again later?",
+                tool_name=None,
+                tool_res=None,
+            )
 
         print("ai_response: ", ai_response)
         ai_content = ai_response["content"]
@@ -482,17 +501,21 @@ async def transcribe_stream(ws: WebSocket):
         await elevenlabs_speech(ws, ai_content)
         # await cartesia_speech(ws, ai_content)
 
-        await ws.send_json([
-            dict(role="user", content=full_transcription),
-            dict(role="assistant", **ai_response)
-        ])
+        await ws.send_json(
+            [
+                dict(role="user", content=full_transcription),
+                dict(role="assistant", **ai_response),
+            ]
+        )
     except Exception as e:
         print(f"Error: {e}")
     finally:
         await ws.close()
 
 
-@app.function(image=image, secrets=[Secret.from_name(secret_name)], gpu=gpu.A10G(), keep_warm=1)
+@app.function(
+    image=image, secrets=[Secret.from_name(secret_name)], gpu=gpu.A10G(), keep_warm=1
+)
 @asgi_app()
 def fastapi_app():
     return web_app
