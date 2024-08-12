@@ -21,12 +21,9 @@ class LocalAgreement:
         # https://github.com/ufal/whisper_streaming/blob/main/whisper_online.py#L264
         incoming = incoming.after(confirmed.end - 0.1)
         prefix = common_prefix(incoming.words, self.unconfirmed.words)
-        print(f"Confirmed: {confirmed.text}")
-        print(f"Unconfirmed: {self.unconfirmed.text}")
-        print(f"Incoming: {incoming.text}")
 
         if len(incoming.words) > len(prefix):
-            self.unconfirmed = Transcription(incoming.words[len(prefix):])
+            self.unconfirmed = Transcription(incoming.words[len(prefix) :])
         else:
             self.unconfirmed = Transcription()
 
@@ -59,8 +56,8 @@ def prompt(confirmed: Transcription) -> str | None:
 
 
 async def audio_transcriber(
-        asr: FasterWhisperASR,
-        audio_stream: AudioStream,
+    asr: FasterWhisperASR,
+    audio_stream: AudioStream,
 ) -> AsyncGenerator[Transcription, None]:
     local_agreement = LocalAgreement()
     full_audio = Audio()
@@ -73,7 +70,6 @@ async def audio_transcriber(
         if len(new_words) > 0:
             confirmed.extend(new_words)
             yield confirmed
-    print("Flushing...")
     confirmed.extend(local_agreement.unconfirmed.words)
     yield confirmed
     print("Audio transcriber finished")

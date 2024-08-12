@@ -156,7 +156,6 @@ async def transcribe_stream(ws: WebSocket):
             time.sleep(0.5)
 
     def would_you_rather(prompt):
-        return "Would you rather have passionate sex in an exotic location or have a cozy night in with your partner?"
         max_retries = 3
 
         for attempt in range(max_retries):
@@ -451,24 +450,20 @@ async def transcribe_stream(ws: WebSocket):
         finally:
             cartesia_ws.close()
 
-    try:
-        await ws.accept()
-
-        whisper = WhisperModel(whisper_model, device="cuda")
-        transcribe_opts = {
-            "vad_filter": True,
-            "condition_on_previous_text": False,
-        }
-        asr = FasterWhisperASR(whisper, **transcribe_opts)
-
-        audio_stream = AudioStream()
-        full_transcription = ""
-
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(audio_receiver(ws, audio_stream))
-            async for transcription in audio_transcriber(asr, audio_stream):
-                print(f"Transcription: {transcription.text}")
-                full_transcription = transcription.text
+    async def core(
+        *,
+        ws: WebSocket,
+        audio_stream: AudioStream,
+        asr: FasterWhisperASR,
+        full_transcription: str,
+    ):
+        print("Starting core")
+        audio_receiver_task = asyncio.create_task(audio_receiver(ws, audio_stream))
+        print("Created audio receiver task")
+        async for transcription in audio_transcriber(asr, audio_stream):
+            print(f"Transcription: {transcription.text}")
+            full_transcription = transcription.text
+        await audio_receiver_task
 
         print("Final transcription: ", full_transcription)
         messages = None
@@ -507,6 +502,29 @@ async def transcribe_stream(ws: WebSocket):
                 dict(role="assistant", **ai_response),
             ]
         )
+
+    try:
+        whisper = WhisperModel(whisper_model, device="cuda")
+
+        transcribe_opts = {
+            "vad_filter": True,
+            "condition_on_previous_text": False,
+        }
+        asr = FasterWhisperASR(whisper, **transcribe_opts)
+
+        audio_stream = AudioStream()
+        full_transcription = ""
+
+        # now we wait for the client to connect
+        await ws.accept()
+
+        while True:
+            await core(
+                ws=ws,
+                audio_stream=audio_stream,
+                asr=asr,
+                full_transcription=full_transcription,
+            )
     except Exception as e:
         print(f"Error: {e}")
     finally:

@@ -10,17 +10,17 @@ from src.core import Transcription, Word
 
 class FasterWhisperASR:
     def __init__(
-            self,
-            whisper: transcribe.WhisperModel,
-            **kwargs,
+        self,
+        whisper: transcribe.WhisperModel,
+        **kwargs,
     ) -> None:
         self.whisper = whisper
         self.transcribe_opts = kwargs
 
     def _transcribe(
-            self,
-            audio: Audio,
-            prompt: str | None = None,
+        self,
+        audio: Audio,
+        prompt: str | None = None,
     ) -> tuple[Transcription, transcribe.TranscriptionInfo]:
         start = time.perf_counter()
         segments, transcription_info = self.whisper.transcribe(
@@ -40,9 +40,9 @@ class FasterWhisperASR:
         return (transcription, transcription_info)
 
     async def transcribe(
-            self,
-            audio: Audio,
-            prompt: str | None = None,
+        self,
+        audio: Audio,
+        prompt: str | None = None,
     ) -> tuple[Transcription, transcribe.TranscriptionInfo]:
         """Wrapper around _transcribe so it can be used in async context"""
         # is this the optimal way to execute a blocking call in an async context?

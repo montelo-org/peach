@@ -1,45 +1,57 @@
-import { StrictMode } from "react";
-import App from "@/App";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createRoot } from "react-dom/client";
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App.tsx";
 
-import "@/style/globals.css";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import WeatherPage from "./pages/weather";
+import WouldyouratherPage from "./pages/wouldyourather";
+import GenerateImagePage from "./pages/generate_image";
+import RecordingPage from "./pages/recording";
+import ProcessingPage from "./pages/processing";
+import PlaybackPage from "./pages/playback";
+import Root from "./Root.tsx";
 
-import { CameraControlsContextProvider } from "@/context/cameraControls";
-import { ModeContextProvider } from "@/context/mode";
-import { ThemeProvider } from "@/context/theme";
-import { VisualContextProvider } from "@/context/visual";
+const router = createBrowserRouter([
+	{
+		path: "/",
+		element: <Root />,
+		children: [
+			{
+				path: "/",
+				element: <App />,
+			},
+			{
+				path: "/would-you-rather",
+				element: <WouldyouratherPage />,
+			},
+			{
+				path: "/weather",
+				element: <WeatherPage />,
+			},
+			{
+				path: "/generate_image",
+				element: <GenerateImagePage />,
+			},
+			{
+				path: "/recording",
+				element: <RecordingPage />,
+			},
+			{
+				path: "/processing",
+				element: <ProcessingPage />,
+			},
+			{
+				path: "/playback",
+				element: <PlaybackPage />,
+			},
+		],
+	},
+]);
 
-import { AudioSourceContextProvider } from "./context/audioSource";
-import { FFTAnalyzerContextProvider } from "./context/fftAnalyzer";
-import { NoiseGeneratorContextProvider } from "./context/noiseGenerator";
-import { SoundcloudContextProvider } from "./context/soundcloud";
-import { WaveGeneratorContextProvider } from "./context/waveGenerator";
-
-const queryClient = new QueryClient();
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-        <ModeContextProvider>
-          <WaveGeneratorContextProvider>
-            <NoiseGeneratorContextProvider>
-              <FFTAnalyzerContextProvider>
-                <AudioSourceContextProvider>
-                  <SoundcloudContextProvider>
-                    <CameraControlsContextProvider>
-                      <VisualContextProvider>
-                        <App />
-                      </VisualContextProvider>
-                    </CameraControlsContextProvider>
-                  </SoundcloudContextProvider>
-                </AudioSourceContextProvider>
-              </FFTAnalyzerContextProvider>
-            </NoiseGeneratorContextProvider>
-          </WaveGeneratorContextProvider>
-        </ModeContextProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
-  </StrictMode>,
+const root = document.getElementById("root");
+// biome-ignore lint/style/noNonNullAssertion: <explanation>
+ReactDOM.createRoot(root!).render(
+	<React.StrictMode>
+		<RouterProvider router={router} />
+	</React.StrictMode>,
 );
