@@ -62,13 +62,13 @@ async def audio_transcriber(
     local_agreement = LocalAgreement()
     full_audio = Audio()
     confirmed = Transcription()
-    async for chunk in audio_stream.chunks(min_duration):
+    async for timestamp, chunk in audio_stream.chunks(min_duration):
         full_audio.extend(chunk)
         audio = full_audio.after(needs_audio_after(confirmed))
         transcription, _ = await asr.transcribe(audio, prompt(confirmed))
         new_words = local_agreement.merge(confirmed, transcription)
         if len(new_words) > 0:
             confirmed.extend(new_words)
-            yield confirmed
+            yield timestamp, confirmed
     confirmed.extend(local_agreement.unconfirmed.words)
-    yield confirmed
+    yield timestamp, confirmed

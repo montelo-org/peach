@@ -2,6 +2,7 @@
 # imports
 ###########################################################################
 import asyncio
+import ctypes
 from io import BytesIO
 import json
 import logging
@@ -9,6 +10,7 @@ import multiprocessing
 import os
 from enum import Enum
 import re
+import time
 
 import colorlog
 import numpy as np
@@ -72,7 +74,12 @@ supabase: Client = create_client(
 ###########################################################################
 SLEEP_TIME = 0.01
 FRAME_RATE = 16000
-SILENCE_RATIO_THRESHOLD = 0.7  # 70% of frames in window must be silent
+SILENCE_CALIBRATION_TIME = 0.5  # Time in seconds to calibrate silence
+SILENCE_CALIBRATION_SAMPLES = int(SILENCE_CALIBRATION_TIME * FRAME_RATE)
+SILENCE_WINDOW_SIZE = int(FRAME_RATE * 1.0)  # 1 second window for silence detection
+CONSECUTIVE_SILENT_WINDOWS = (
+    3  # Number of consecutive silent windows to trigger end of speech
+)
 
 messages = [
     {
@@ -94,7 +101,7 @@ ONLY call generate_image the function when the user specifically asks to create 
 
 
 ###########################################################################
-# locks & shared states
+# locks
 ###########################################################################
 RECORDER_LOCK = asyncio.Lock()  # this lock determines when we need to record/not record
 USER_ENDED_SPEAKING_EVENT = (
@@ -108,12 +115,6 @@ HEY_PEACH_DETECTED_LOCK = (
 ###########################################################################
 # enums
 ###########################################################################
-class WsEvent(Enum):
-    AUDIO_UPDATE = "AUDIO_UPDATE"
-    AUDIO_END = "AUDIO_END"
-    SEND_MESSAGES = "SEND_MESSAGES"
-
-
 class UIState(Enum):
     IDLING = "idling"
     RECORDING = "recording"
@@ -133,16 +134,19 @@ def db_update_state(new_state: str) -> None:
 
 
 # this task will record audio and put it in a queue to be shared between tasks
-async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> None:
+async def task_record(
+    *,
+    recorder: PvRecorder,
+    audio_stream: AudioStream,
+    last_audio_timestamp: multiprocessing.Value,
+) -> None:
     logging.info("Recording started, start speaking!")
     recorder.start()
 
     silence_window = []
     silence_threshold = None
     total_samples = 0
-    SILENCE_CALIBRATION_TIME = 0.5  # Time in seconds to calibrate silence
-    silence_calibration_samples = int(SILENCE_CALIBRATION_TIME * FRAME_RATE)
-    SILENCE_WINDOW_SIZE = int(FRAME_RATE * SILENCE_CALIBRATION_TIME)
+    silent_window_count = 0
 
     while True:
         await asyncio.sleep(SLEEP_TIME)
@@ -156,7 +160,8 @@ async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> Non
 
         pcm_array = np.array(pcm, dtype=np.int16)
         audio_samples = audio_samples_from_file(BytesIO(pcm_array.tobytes()))
-        audio_stream.extend(audio_samples)
+        current_time = round(time.time(), 0)
+        audio_stream.extend(audio_samples, current_time)
 
         if HEY_PEACH_DETECTED_LOCK.locked() and not USER_ENDED_SPEAKING_EVENT.is_set():
             volume = np.sqrt(np.mean(np.square(pcm_array.astype(np.float32))))
@@ -167,13 +172,13 @@ async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> Non
                 total_samples += len(pcm_array)
                 silence_window.extend(pcm_array)
 
-                if total_samples >= silence_calibration_samples:
+                if total_samples >= SILENCE_CALIBRATION_SAMPLES:
                     silence_threshold = (
                         np.sqrt(
                             np.mean(
                                 np.square(
                                     np.array(
-                                        silence_window[:silence_calibration_samples]
+                                        silence_window[:SILENCE_CALIBRATION_SAMPLES]
                                     ).astype(np.float32)
                                 )
                             )
@@ -195,17 +200,26 @@ async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> Non
                 )
                 is_silent = window_volume < silence_threshold
 
-                silence_ratio = 1.0 if is_silent else 0.0
+                if is_silent:
+                    silent_window_count += 1
+                else:
+                    silent_window_count = 0
+
+                silence_ratio = silent_window_count / CONSECUTIVE_SILENT_WINDOWS
                 logging.info(f"Silence ratio: {silence_ratio:.2f}")
 
-                if silence_ratio >= SILENCE_RATIO_THRESHOLD:
-                    logging.info("🔇 User ended speaking, locking...")
+                if silent_window_count >= CONSECUTIVE_SILENT_WINDOWS:
+                    logging.info(
+                        f"🔇 User ended speaking, locking, last timestamp is {current_time}..."
+                    )
                     USER_ENDED_SPEAKING_EVENT.set()
+                    last_audio_timestamp.value = current_time
 
                     # reset variables
                     silence_threshold = None
                     silence_window = []
                     total_samples = 0
+                    silent_window_count = 0
 
 
 def check_hey_peach(transcription: str) -> bool:
@@ -225,6 +239,7 @@ async def task_ws_sender(
     *,
     transcription_queue: multiprocessing.Queue,
     ws: websockets.WebSocketClientProtocol,
+    last_audio_timestamp: multiprocessing.Value,
 ):
     processed_transcription = ""
 
@@ -234,15 +249,16 @@ async def task_ws_sender(
             await asyncio.sleep(SLEEP_TIME)
 
             try:
-                transcription = transcription_queue.get(block=False, timeout=0.1)
-                logging.info(f"Got transcription: {transcription}")
+                timestamp, transcription = transcription_queue.get(
+                    block=False, timeout=0.1
+                )
             except multiprocessing.queues.Empty:
                 continue
 
             if transcription is None:
                 continue
 
-            logging.info(f"Received transcription: {transcription}")
+            logging.info(f"Received transcription: {transcription} at {timestamp}")
             logging.info(f"Processed transcription: {processed_transcription}")
 
             diff_transcription = transcription[len(processed_transcription) :].strip()
@@ -261,13 +277,36 @@ async def task_ws_sender(
                 logging.info("Waiting for user to finish speaking...")
 
                 await USER_ENDED_SPEAKING_EVENT.wait()
-                logging.info("User finished speaking, getting latest transcription...")
+                logging.info(
+                    "User finished speaking, waiting for latest transcription..."
+                )
 
-                # diff_transcription = transcription_state.full_transcription[
-                #     len(transcription_state.processed_transcription) :
-                # ].strip()
+                while True:
+                    # sleep to avoid blocking the event loop
+                    await asyncio.sleep(SLEEP_TIME)
 
-                # logging.info(f"Got transcription: {diff_transcription}")
+                    # get the latest transcription from the queue
+                    try:
+                        timestamp, transcription = transcription_queue.get(
+                            block=False, timeout=0.2
+                        )
+                    except multiprocessing.queues.Empty:
+                        break
+
+                    logging.info(
+                        f"Got new transcription: {transcription} at {timestamp}"
+                    )
+
+                    logging.info(
+                        f"Last audio timestamp: {last_audio_timestamp.value}, {timestamp > last_audio_timestamp.value}"
+                    )
+
+                    # if the timestamp is greater than the last audio timestamp, break
+                    if timestamp >= last_audio_timestamp.value:
+                        logging.info(
+                            "New transcription is newer than last audio timestamp, breaking"
+                        )
+                        break
 
                 processed_transcription = transcription
 
@@ -375,7 +414,11 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
         logging.info("Closed websocket receiver")
 
 
-async def task_ws_handler(*, transcription_queue: multiprocessing.Queue) -> None:
+async def task_ws_handler(
+    *,
+    transcription_queue: multiprocessing.Queue,
+    last_audio_timestamp: multiprocessing.Value,
+) -> None:
     ws = None
 
     try:
@@ -386,7 +429,11 @@ async def task_ws_handler(*, transcription_queue: multiprocessing.Queue) -> None
 
         async with asyncio.TaskGroup() as tg:
             tg.create_task(
-                task_ws_sender(ws=ws, transcription_queue=transcription_queue)
+                task_ws_sender(
+                    ws=ws,
+                    transcription_queue=transcription_queue,
+                    last_audio_timestamp=last_audio_timestamp,
+                )
             )
             tg.create_task(task_ws_receiver(ws=ws))
     except* Exception as exc:
@@ -401,31 +448,36 @@ async def worker_transcription(
     audio_queue: multiprocessing.Queue,
     transcription_queue: multiprocessing.Queue,
 ) -> None:
-    logging.info("Started transcription worker")
     asr = FasterWhisperASR(
         "base.en",
         vad_filter=True,
         vad_parameters=dict(min_silence_duration_ms=500),
     )
-    logging.info("ASR initialized")
-
     audio_stream = AudioStream(audio_queue)
-    logging.info("Audio stream initialized")
-    async for transcription in audio_transcriber(asr, audio_stream):
-        logging.info(f"Transcription from worker: {transcription}")
-        transcription_queue.put(transcription.text)
+    async for timestamp, transcription in audio_transcriber(asr, audio_stream):
+        transcription_queue.put((timestamp, transcription.text))
 
 
 async def worker_core(
     audio_queue: multiprocessing.Queue,
     transcription_queue: multiprocessing.Queue,
+    last_audio_timestamp: multiprocessing.Value,
 ) -> None:
-    logging.info("Started core worker")
     audio_stream = AudioStream(audio_queue)
-    logging.info("Audio stream initialized")
     async with asyncio.TaskGroup() as tg:
-        tg.create_task(task_ws_handler(transcription_queue=transcription_queue))
-        tg.create_task(task_record(recorder=recorder, audio_stream=audio_stream))
+        tg.create_task(
+            task_ws_handler(
+                transcription_queue=transcription_queue,
+                last_audio_timestamp=last_audio_timestamp,
+            )
+        )
+        tg.create_task(
+            task_record(
+                recorder=recorder,
+                audio_stream=audio_stream,
+                last_audio_timestamp=last_audio_timestamp,
+            )
+        )
 
 
 def run_async_worker(worker_func, *args):
@@ -476,15 +528,20 @@ def main() -> None:
     # create shared variables among processes
     audio_queue = multiprocessing.Queue()
     transcription_queue = multiprocessing.Queue()
+    last_audio_timestamp = multiprocessing.Value(ctypes.c_float, 0)
 
     # define the processes
     p_core = multiprocessing.Process(
         target=run_async_worker,
-        args=(worker_core, audio_queue, transcription_queue),
+        args=(worker_core, audio_queue, transcription_queue, last_audio_timestamp),
     )
     p_transcription = multiprocessing.Process(
         target=run_async_worker,
-        args=(worker_transcription, audio_queue, transcription_queue),
+        args=(
+            worker_transcription,
+            audio_queue,
+            transcription_queue,
+        ),
     )
 
     logging.info("🚀 Starting processes")

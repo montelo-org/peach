@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
-from typing import AsyncGenerator, BinaryIO
+from typing import AsyncGenerator, BinaryIO, Tuple
 
 import numpy as np
 import soundfile as sf
@@ -60,9 +60,9 @@ class AudioStream:
         self.data_queue = data_queue
         self.closed = False
 
-    def extend(self, data: NDArray[np.float32]) -> None:
+    def extend(self, data: NDArray[np.float32], timestamp: float) -> None:
         assert not self.closed
-        self.data_queue.put(data)
+        self.data_queue.put((timestamp, data))
 
     def close(self) -> None:
         assert not self.closed
@@ -71,27 +71,29 @@ class AudioStream:
 
     async def chunks(
         self, min_duration: float
-    ) -> AsyncGenerator[NDArray[np.float32], None]:
+    ) -> AsyncGenerator[Tuple[float, NDArray[np.float32]], None]:
         buffer = np.array([], dtype=np.float32)
+        last_timestamp = None
         while True:
             try:
                 while not self.data_queue.empty():
-                    chunk = self.data_queue.get_nowait()
+                    timestamp, chunk = (
+                        self.data_queue.get_nowait()
+                    )  # Unpack timestamp and data
                     if chunk is None:  # Check for sentinel value
                         self.closed = True
                         break
+                    last_timestamp = timestamp
                     buffer = np.append(buffer, chunk)
-            except (
-                Exception
-            ):  # This includes queue.Empty and any other unexpected errors
+            except Exception:
                 pass
 
             if len(buffer) / SAMPLES_PER_SECOND >= min_duration or self.closed:
-                yield buffer
+                yield (last_timestamp, buffer)  # Yield both timestamp and buffer
                 buffer = np.array([], dtype=np.float32)
 
             if self.closed and len(buffer) == 0:
                 return
 
             if not self.closed:
-                await asyncio.sleep(0.1)  # Adjust as needed
+                await asyncio.sleep(0.1)
