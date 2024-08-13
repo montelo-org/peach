@@ -9,7 +9,6 @@ import logging
 import os
 from enum import Enum
 import re
-import time
 
 from faster_whisper import WhisperModel
 import colorlog
@@ -68,7 +67,7 @@ supabase: Client = create_client(
     os.environ.get("SUPABASE_URL"),
     os.environ.get("SUPABASE_KEY"),
 )
-vad = webrtcvad.Vad(2)  # Create VAD with aggressiveness level 2
+vad = webrtcvad.Vad(0)  # Create VAD with aggressiveness level 0
 
 
 ###########################################################################
@@ -81,7 +80,8 @@ FRAME_RATE = 16000
 VAD_FRAME_SIZE = 480  # Assuming 30ms frames at 16kHz
 BUFFER_DURATION_MS = 500  # 500ms buffer
 VAD_BUFFER_SIZE = BUFFER_DURATION_MS * 16  # 500ms buffer at 16kHz
-COUNT_SILENCE_THRESHOLD = 15
+VAD_WINDOW_SIZE = 40  # Number of frames to consider
+SILENCE_RATIO_THRESHOLD = 0.7  # 70% of frames in window must be silent
 
 messages = [
     {
@@ -116,7 +116,8 @@ HEY_PEACH_DETECTED_LOCK = (
 
 @dataclass
 class TranscriptionState:
-    transcription: str = ""
+    processed_transcription: str = ""
+    full_transcription: str = ""
     update_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -154,7 +155,9 @@ async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> Non
     recorder.start()
 
     vad_buffer = np.zeros(VAD_BUFFER_SIZE, dtype=np.int16)
-    count_silence = 0
+    # Initialize window with all frames as non-silent
+    silence_window = [False] * VAD_WINDOW_SIZE
+    window_index = 0
 
     while True:
         # Pause briefly to avoid blocking the event loop
@@ -162,7 +165,6 @@ async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> Non
 
         # Skip recording if the recorder is locked (processing or playback)
         if RECORDER_LOCK.locked():
-            logging.info("Recorder locked, skipping")
             continue
 
         # Read PCM data from the recorder
@@ -175,8 +177,7 @@ async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> Non
         audio_samples = audio_samples_from_file(BytesIO(pcm_array.tobytes()))
         audio_stream.extend(audio_samples)
 
-        if HEY_PEACH_DETECTED_LOCK.locked():
-            logging.info("Checking for speech...")
+        if HEY_PEACH_DETECTED_LOCK.locked() and not USER_ENDED_SPEAKING_EVENT.is_set():
             # Update VAD buffer
             vad_buffer = np.roll(vad_buffer, -len(pcm_array))
             vad_buffer[-len(pcm_array) :] = pcm_array
@@ -187,16 +188,16 @@ async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> Non
                 for i in range(0, len(vad_buffer), VAD_FRAME_SIZE)
             )
 
-            logging.info(f"Speech detected: {is_speech}")
+            # Update the sliding window
+            silence_window[window_index] = not is_speech
+            window_index = (window_index + 1) % VAD_WINDOW_SIZE
 
-            if is_speech:
-                count_silence = 0
-            else:
-                count_silence += 1
+            # Calculate the ratio of silent frames in the window
+            silence_ratio = sum(silence_window) / VAD_WINDOW_SIZE
 
-            logging.info(f"Count silence: {count_silence}")
+            logging.info(f"Silence ratio: {silence_ratio:.2f}")
 
-            if count_silence > COUNT_SILENCE_THRESHOLD:
+            if silence_ratio >= SILENCE_RATIO_THRESHOLD:
                 logging.info("🔇 User ended speaking, locking...")
                 USER_ENDED_SPEAKING_EVENT.set()
 
@@ -225,16 +226,21 @@ async def task_ws_sender(
             await asyncio.sleep(SLEEP_TIME)
 
             await transcription_state.update_event.wait()
-            transcription = transcription_state.transcription
             transcription_state.update_event.clear()
 
-            logging.info(f"New transcription: {transcription}")
+            diff_transcription = transcription_state.full_transcription[
+                len(transcription_state.processed_transcription) :
+            ].strip()
+
+            logging.info(f"Diff transcription: {diff_transcription}")
 
             if ws.closed:
                 logging.info("WebSocket is closed, stopping sender.")
                 break
 
-            if not HEY_PEACH_DETECTED_LOCK.locked() and check_hey_peach(transcription):
+            if not HEY_PEACH_DETECTED_LOCK.locked() and check_hey_peach(
+                diff_transcription
+            ):
                 logging.info("🍑 Hey Peach detected, locking...")
                 await HEY_PEACH_DETECTED_LOCK.acquire()
                 logging.info("Waiting for user to finish speaking...")
@@ -242,10 +248,15 @@ async def task_ws_sender(
                 await USER_ENDED_SPEAKING_EVENT.wait()
                 logging.info("User finished speaking, getting latest transcription...")
 
-                await transcription_state.update_event.wait()
-                transcription = transcription_state.transcription
-                transcription_state.update_event.clear()
-                logging.info(f"Got transcription: {transcription}")
+                # await transcription_state.update_event.wait()
+                diff_transcription = transcription_state.full_transcription[
+                    len(transcription_state.processed_transcription) :
+                ].strip()
+                # transcription_state.update_event.clear()
+                logging.info(f"Got transcription: {diff_transcription}")
+                transcription_state.processed_transcription = (
+                    transcription_state.full_transcription
+                )
 
                 logging.info("Handling locks...")
                 await RECORDER_LOCK.acquire()
@@ -255,11 +266,12 @@ async def task_ws_sender(
                 messages.append(
                     dict(
                         role="user",
-                        content=transcription,
+                        content=diff_transcription,
                     )
                 )
 
                 await ws.send(json.dumps({"messages": messages}))
+                db_update_state(UIState.PROCESSING.value)
     except websockets.exceptions.ConnectionClosed as e:
         logging.error(f"WebSocket connection closed unexpectedly: {e}")
     except Exception as e:
@@ -268,9 +280,7 @@ async def task_ws_sender(
         logging.info("Closed websocket sender")
 
 
-async def task_ws_receiver(
-    *, ws: websockets.WebSocketClientProtocol, transcription_state: TranscriptionState
-):
+async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
     global messages
     stream = sd.OutputStream(samplerate=24000, channels=1, dtype="int16")
     stream.start()
@@ -299,25 +309,37 @@ async def task_ws_receiver(
                             content=parsed_data.get("content"),
                         )
                     )
-                    transcription_state.transcription = ""
 
+                    await asyncio.sleep(1)
                     if RECORDER_LOCK.locked():
                         RECORDER_LOCK.release()
 
                     if isinstance(parsed_data, dict):
                         tool_name = parsed_data.get("tool_name")
+                        logging.info(f"Tool name: {tool_name}")
                         if tool_name == "generate_image":
+                            logging.info(
+                                f"Generating image: {parsed_data.get('tool_res')}"
+                            )
                             db_update_state(
                                 f"{UIState.IMAGE} {parsed_data.get('tool_res')}"
                             )
                         elif tool_name == "get_weather":
+                            logging.info(
+                                f"Getting weather: {json.dumps(parsed_data.get('tool_res'))}"
+                            )
                             db_update_state(
                                 f"get_weather {json.dumps(parsed_data.get('tool_res'))}"
                             )
                         elif tool_name == "would_you_rather":
+                            logging.info(
+                                f"Would you rather: {json.dumps(parsed_data.get('tool_res'))}"
+                            )
                             db_update_state(
                                 f"would_you_rather {json.dumps(parsed_data.get('tool_res'))}"
                             )
+                        else:
+                            db_update_state(UIState.IDLING.value)
                     else:
                         logging.error(f"Unexpected data structure: {parsed_data}")
                 except json.JSONDecodeError:
@@ -349,9 +371,7 @@ async def task_ws_handler(*, transcription_state: TranscriptionState) -> None:
             tg.create_task(
                 task_ws_sender(ws=ws, transcription_state=transcription_state)
             )
-            tg.create_task(
-                task_ws_receiver(ws=ws, transcription_state=transcription_state)
-            )
+            tg.create_task(task_ws_receiver(ws=ws))
     except* Exception as exc:
         logging.error(f"An error occurred in the WebSocket handler: {exc}")
     finally:
@@ -367,7 +387,8 @@ async def task_transcriber(
     asr: FasterWhisperASR,
 ):
     async for transcription in audio_transcriber(asr, audio_stream):
-        transcription_state.transcription = transcription.text
+        logging.info(f"Just transcribed: {transcription.text}")
+        transcription_state.full_transcription = transcription.text
         transcription_state.update_event.set()
 
 

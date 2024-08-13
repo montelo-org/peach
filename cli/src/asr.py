@@ -34,9 +34,9 @@ class FasterWhisperASR:
             word.offset(audio.start)
         transcription = Transcription(words)
         end = time.perf_counter()
-        print(
-            f"Transcribed {audio} in {end - start:.2f} seconds. Transcription: {transcription.text}"
-        )
+        # print(
+        #     f"Transcribed {audio} in {end - start:.2f} seconds. Transcription: {transcription.text}"
+        # )
         return (transcription, transcription_info)
 
     async def transcribe(

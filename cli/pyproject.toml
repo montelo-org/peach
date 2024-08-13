@@ -19,6 +19,7 @@ halo = "^0.0.31"
 supabase = "^2.6.0"
 faster-whisper = "^1.0.3"
 webrtcvad = "^2.0.10"
+aiodebug = "^2.3.0"
 
 
 [build-system]
