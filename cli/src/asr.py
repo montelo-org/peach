@@ -2,7 +2,7 @@ import asyncio
 import time
 from typing import Iterable
 
-from faster_whisper import transcribe
+from faster_whisper import transcribe, WhisperModel
 
 from audio import Audio
 from core import Transcription, Word
@@ -11,10 +11,10 @@ from core import Transcription, Word
 class FasterWhisperASR:
     def __init__(
         self,
-        whisper: transcribe.WhisperModel,
+        whisper_model: str,
         **kwargs,
     ) -> None:
-        self.whisper = whisper
+        self.whisper = WhisperModel(whisper_model, device="cpu", compute_type="int8")
         self.transcribe_opts = kwargs
 
     def _transcribe(
@@ -34,9 +34,9 @@ class FasterWhisperASR:
             word.offset(audio.start)
         transcription = Transcription(words)
         end = time.perf_counter()
-        # print(
-        #     f"Transcribed {audio} in {end - start:.2f} seconds. Transcription: {transcription.text}"
-        # )
+        print(
+            f"Transcribed {audio} in {end - start:.2f} seconds. Transcription: {transcription.text}"
+        )
         return (transcription, transcription_info)
 
     async def transcribe(

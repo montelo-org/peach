@@ -9,6 +9,7 @@ import logging
 import os
 from enum import Enum
 import re
+import time
 
 from faster_whisper import WhisperModel
 import colorlog
@@ -80,7 +81,7 @@ FRAME_RATE = 16000
 VAD_FRAME_SIZE = 480  # Assuming 30ms frames at 16kHz
 BUFFER_DURATION_MS = 500  # 500ms buffer
 VAD_BUFFER_SIZE = BUFFER_DURATION_MS * 16  # 500ms buffer at 16kHz
-VAD_WINDOW_SIZE = 40  # Number of frames to consider
+VAD_WINDOW_SIZE = 50  # Number of frames to consider
 SILENCE_RATIO_THRESHOLD = 0.7  # 70% of frames in window must be silent
 
 messages = [
@@ -150,56 +151,73 @@ def db_update_state(new_state: str) -> None:
 
 # this task will record audio and put it in a queue to be shared between tasks
 async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> None:
-    # start the recorder
     logging.info("Recording started, start speaking!")
     recorder.start()
 
-    vad_buffer = np.zeros(VAD_BUFFER_SIZE, dtype=np.int16)
-    # Initialize window with all frames as non-silent
-    silence_window = [False] * VAD_WINDOW_SIZE
-    window_index = 0
+    silence_window = []
+    silence_threshold = None
+    total_samples = 0
+    SILENCE_CALIBRATION_TIME = 0.5  # Time in seconds to calibrate silence
+    silence_calibration_samples = int(SILENCE_CALIBRATION_TIME * FRAME_RATE)
+    SILENCE_WINDOW_SIZE = int(FRAME_RATE * SILENCE_CALIBRATION_TIME)
 
     while True:
-        # Pause briefly to avoid blocking the event loop
         await asyncio.sleep(SLEEP_TIME)
 
-        # Skip recording if the recorder is locked (processing or playback)
         if RECORDER_LOCK.locked():
             continue
 
-        # Read PCM data from the recorder
         pcm = recorder.read()
         if not pcm:
             continue
 
-        # Convert PCM data to numpy array and append to audio stream
         pcm_array = np.array(pcm, dtype=np.int16)
         audio_samples = audio_samples_from_file(BytesIO(pcm_array.tobytes()))
         audio_stream.extend(audio_samples)
 
         if HEY_PEACH_DETECTED_LOCK.locked() and not USER_ENDED_SPEAKING_EVENT.is_set():
-            # Update VAD buffer
-            vad_buffer = np.roll(vad_buffer, -len(pcm_array))
-            vad_buffer[-len(pcm_array) :] = pcm_array
+            volume = np.sqrt(np.mean(np.square(pcm_array.astype(np.float32))))
+            logging.info(f"Volume: {volume:.2f}")
 
-            # Check for speech in the VAD buffer
-            is_speech = any(
-                vad.is_speech(vad_buffer[i : i + VAD_FRAME_SIZE].tobytes(), FRAME_RATE)
-                for i in range(0, len(vad_buffer), VAD_FRAME_SIZE)
-            )
+            if silence_threshold is None:
+                # Calibration phase
+                total_samples += len(pcm_array)
+                silence_window.extend(pcm_array)
 
-            # Update the sliding window
-            silence_window[window_index] = not is_speech
-            window_index = (window_index + 1) % VAD_WINDOW_SIZE
+                if total_samples >= silence_calibration_samples:
+                    silence_threshold = (
+                        np.sqrt(
+                            np.mean(
+                                np.square(
+                                    np.array(
+                                        silence_window[:silence_calibration_samples]
+                                    ).astype(np.float32)
+                                )
+                            )
+                        )
+                        * 1.1
+                    )
+                    logging.info(f"Silence threshold calibrated: {silence_threshold}")
+                    silence_window = silence_window[
+                        -SILENCE_WINDOW_SIZE:
+                    ]  # Keep only the last SILENCE_WINDOW_SIZE samples
+            else:
+                # Post-calibration phase
+                silence_window.extend(pcm_array)
+                if len(silence_window) > SILENCE_WINDOW_SIZE:
+                    silence_window = silence_window[-SILENCE_WINDOW_SIZE:]
 
-            # Calculate the ratio of silent frames in the window
-            silence_ratio = sum(silence_window) / VAD_WINDOW_SIZE
+                window_volume = np.sqrt(
+                    np.mean(np.square(np.array(silence_window).astype(np.float32)))
+                )
+                is_silent = window_volume < silence_threshold
 
-            logging.info(f"Silence ratio: {silence_ratio:.2f}")
+                silence_ratio = 1.0 if is_silent else 0.0
+                logging.info(f"Silence ratio: {silence_ratio:.2f}")
 
-            if silence_ratio >= SILENCE_RATIO_THRESHOLD:
-                logging.info("🔇 User ended speaking, locking...")
-                USER_ENDED_SPEAKING_EVENT.set()
+                if silence_ratio >= SILENCE_RATIO_THRESHOLD:
+                    logging.info("🔇 User ended speaking, locking...")
+                    USER_ENDED_SPEAKING_EVENT.set()
 
 
 def check_hey_peach(transcription: str) -> bool:
@@ -248,11 +266,11 @@ async def task_ws_sender(
                 await USER_ENDED_SPEAKING_EVENT.wait()
                 logging.info("User finished speaking, getting latest transcription...")
 
-                # await transcription_state.update_event.wait()
+                await transcription_state.update_event.wait()
                 diff_transcription = transcription_state.full_transcription[
                     len(transcription_state.processed_transcription) :
                 ].strip()
-                # transcription_state.update_event.clear()
+                transcription_state.update_event.clear()
                 logging.info(f"Got transcription: {diff_transcription}")
                 transcription_state.processed_transcription = (
                     transcription_state.full_transcription
@@ -310,7 +328,11 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
                         )
                     )
 
+                    # we sleep here to give the audio enough time to finish
+                    # obv a hack but it works
                     await asyncio.sleep(1)
+
+                    # release the recorder lock
                     if RECORDER_LOCK.locked():
                         RECORDER_LOCK.release()
 
@@ -403,11 +425,10 @@ async def start_recording() -> None:
         transcription_state = TranscriptionState()
 
         # setup asr
-        logging.info(f"Loading whisper model {WHISPER_MODEL}...")
-        whisper = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
-        logging.info("Loaded whisper model!")
         asr = FasterWhisperASR(
-            whisper, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500)
+            WHISPER_MODEL,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500),
         )
         # this stream holds the audio data to be transcribed
         audio_stream = AudioStream()
