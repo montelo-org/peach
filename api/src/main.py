@@ -1,18 +1,15 @@
-import asyncio
-import base64
 import json
 import time
 from enum import Enum
-from io import BytesIO
 
 import requests
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.websockets import WebSocket, WebSocketDisconnect
-from modal import Image, asgi_app, Secret, gpu, Dict
+from fastapi.websockets import WebSocket
+from modal import Image, asgi_app, Secret, App
 
-from src.common import app
 
+app = App("peach-api")
 web_app = FastAPI()
 origins = [
     "http://localhost:5173",
@@ -28,48 +25,14 @@ web_app.add_middleware(
     allow_headers=["*"],
 )
 
-whisper_model = "small.en"
 secret_name = "peach-secrets"
-globals = Dict.from_name("globals", create_if_missing=True)
 
 
-def download_models():
-    from faster_whisper import WhisperModel
-    from cartesia import Cartesia
-
-    WhisperModel(whisper_model, device="cuda")
-
-    cartesia = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
-    voice_id = "5345cf08-6f37-424d-a5d9-8ae1101b9377"  # Maria
-    voice = cartesia.voices.get(id=voice_id)
-    globals["voice"] = voice
-
-
-image = (
-    Image.from_registry(
-        "nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04",
-        add_python="3.11",
-        setup_dockerfile_commands=[
-            "RUN apt update",
-            "RUN DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt install software-properties-common -y",
-            "RUN add-apt-repository ppa:deadsnakes/ppa",
-            "RUN apt install python3.11 python3-pip -y",
-            "RUN apt install python-is-python3 -y",
-        ],
-    )
-    .apt_install("ffmpeg", "portaudio19-dev")
-    .pip_install(
-        "faster-whisper",
-        "pydub",
-        "groq",
-        "elevenlabs",
-        "soundfile",
-        "cartesia",
-        "openai",
-    )
-    .run_function(
-        download_models, gpu=gpu.A10G(), secrets=[Secret.from_name(secret_name)]
-    )
+image = Image.debian_slim(python_version="3.11").pip_install(
+    "groq",
+    "elevenlabs",
+    "cartesia",
+    "openai",
 )
 
 with image.imports():
@@ -78,17 +41,6 @@ with image.imports():
     from openai import OpenAI
     from elevenlabs.client import ElevenLabs
     from cartesia import Cartesia
-    from faster_whisper import WhisperModel
-    from faster_whisper.vad import VadOptions, get_speech_timestamps
-    from src.asr import FasterWhisperASR
-    from src.audio import AudioStream, audio_samples_from_file
-    from src.transcriber import audio_transcriber
-    from src.config import (
-        max_no_data_seconds,
-        inactivity_window_seconds,
-        SAMPLES_PER_SECOND,
-        max_inactivity_seconds,
-    )
 
 
 @web_app.get("/health")
@@ -228,62 +180,13 @@ async def transcribe_stream(ws: WebSocket):
         get_weather=get_weather,
     )
 
-    async def audio_receiver(ws: WebSocket, audio_stream: AudioStream) -> None:
-        try:
-            while True:
-                data = await asyncio.wait_for(
-                    ws.receive_json(), timeout=max_no_data_seconds
-                )
-                event = data["event"]
-
-                if event == WsEvent.AUDIO_END.value:
-                    break
-
-                audio_base64 = data["audio"]
-
-                bytes_ = base64.b64decode(audio_base64)
-                audio_samples = audio_samples_from_file(BytesIO(bytes_))
-                audio_stream.extend(audio_samples)
-                if audio_stream.duration - inactivity_window_seconds >= 0:
-                    audio = audio_stream.after(
-                        audio_stream.duration - inactivity_window_seconds
-                    )
-                    vad_opts = VadOptions(min_silence_duration_ms=500, speech_pad_ms=0)
-                    # NOTE: This is a synchronous operation that runs every time new data is received.
-                    # This shouldn"t be an issue unless data is being received in tiny chunks or the user"s machine is a potato.
-                    timestamps = get_speech_timestamps(audio.data, vad_opts)
-                    if len(timestamps) == 0:
-                        print(
-                            f"No speech detected in the last {inactivity_window_seconds} seconds."
-                        )
-                        break
-                    elif (
-                        # last speech end time
-                        inactivity_window_seconds
-                        - timestamps[-1]["end"] / SAMPLES_PER_SECOND
-                        >= max_inactivity_seconds
-                    ):
-                        print(
-                            f"Not enough speech in the last {inactivity_window_seconds} seconds."
-                        )
-                        break
-        except asyncio.TimeoutError:
-            print(
-                f"No data received in {max_no_data_seconds} seconds. Closing the connection."
-            )
-        except WebSocketDisconnect as e:
-            print(f"Client disconnected: {e}")
-        except Exception as e:
-            print("Error in audio_receiver: ", e)
-        audio_stream.close()
-
-    def ai(transcription: str, messages) -> dict[str, str]:
+    def ai(messages) -> dict[str, str]:
         start_time = time.time()
 
-        combined_messages = messages + [dict(role="user", content=transcription)]
+        print("messages: ", messages)
         completion = openai.chat.completions.create(
             model=openai_model,
-            messages=combined_messages,
+            messages=messages,
             tools=[
                 {
                     "type": "function",
@@ -453,35 +356,12 @@ async def transcribe_stream(ws: WebSocket):
     async def core(
         *,
         ws: WebSocket,
-        audio_stream: AudioStream,
-        asr: FasterWhisperASR,
-        full_transcription: str,
+        messages,
     ):
         print("Starting core")
-        audio_receiver_task = asyncio.create_task(audio_receiver(ws, audio_stream))
-        print("Created audio receiver task")
-        async for transcription in audio_transcriber(asr, audio_stream):
-            print(f"Transcription: {transcription.text}")
-            full_transcription = transcription.text
-        await audio_receiver_task
-
-        print("Final transcription: ", full_transcription)
-        messages = None
-
-        while True:
-            message = await asyncio.wait_for(ws.receive_json(), timeout=3)
-            if message["event"] != WsEvent.SEND_MESSAGES.value:
-                continue
-
-            messages = message["messages"]
-            break
 
         try:
-            if full_transcription is not None and full_transcription != "":
-                ai_response = ai(full_transcription, messages)
-                # ai_response = hardcoded_ai(full_transcription, messages)
-            else:
-                raise Exception("No transcription found")
+            ai_response = ai(messages)
         except Exception as e:
             print(e)
             ai_response = dict(
@@ -496,44 +376,24 @@ async def transcribe_stream(ws: WebSocket):
         await elevenlabs_speech(ws, ai_content)
         # await cartesia_speech(ws, ai_content)
 
-        await ws.send_json(
-            [
-                dict(role="user", content=full_transcription),
-                dict(role="assistant", **ai_response),
-            ]
-        )
+        await ws.send_json(dict(role="assistant", **ai_response))
 
     try:
-        whisper = WhisperModel(whisper_model, device="cuda")
-
-        transcribe_opts = {
-            "vad_filter": True,
-            "condition_on_previous_text": False,
-        }
-        asr = FasterWhisperASR(whisper, **transcribe_opts)
-
-        audio_stream = AudioStream()
-        full_transcription = ""
-
-        # now we wait for the client to connect
         await ws.accept()
 
         while True:
-            await core(
-                ws=ws,
-                audio_stream=audio_stream,
-                asr=asr,
-                full_transcription=full_transcription,
-            )
+            data = await ws.receive_json()
+            messages = data.get("messages", [])
+            if messages == []:
+                continue
+            await core(ws=ws, messages=messages)
     except Exception as e:
         print(f"Error: {e}")
     finally:
         await ws.close()
 
 
-@app.function(
-    image=image, secrets=[Secret.from_name(secret_name)], gpu=gpu.A10G(), keep_warm=1
-)
+@app.function(image=image, secrets=[Secret.from_name(secret_name)], keep_warm=1)
 @asgi_app()
 def fastapi_app():
     return web_app

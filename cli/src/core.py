@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from src.config import word_timestamp_error_margin
+from config import word_timestamp_error_margin
 
 
 # TODO: use the `Segment` from `faster-whisper.transcribe` instead
@@ -37,9 +37,9 @@ class Word(Segment):
     def common_prefix(cls, a: list[Word], b: list[Word]) -> list[Word]:
         i = 0
         while (
-                i < len(a)
-                and i < len(b)
-                and canonicalize_word(a[i].text) == canonicalize_word(b[i].text)
+            i < len(a)
+            and i < len(b)
+            and canonicalize_word(a[i].text) == canonicalize_word(b[i].text)
         ):
             i += 1
         return a[:i]
@@ -77,10 +77,7 @@ class Transcription:
 
     def _ensure_no_word_overlap(self, words: list[Word]) -> None:
         if len(self.words) > 0 and len(words) > 0:
-            if (
-                    words[0].start + word_timestamp_error_margin
-                    <= self.words[-1].end
-            ):
+            if words[0].start + word_timestamp_error_margin <= self.words[-1].end:
                 raise ValueError(
                     f"Words overlap: {self.words[-1]} and {words[0]}. Error margin: {word_timestamp_error_margin}"
                 )
@@ -153,9 +150,9 @@ def test_canonicalize_word():
 def common_prefix(a: list[Word], b: list[Word]) -> list[Word]:
     i = 0
     while (
-            i < len(a)
-            and i < len(b)
-            and canonicalize_word(a[i].text) == canonicalize_word(b[i].text)
+        i < len(a)
+        and i < len(b)
+        and canonicalize_word(a[i].text) == canonicalize_word(b[i].text)
     ):
         i += 1
     return a[:i]

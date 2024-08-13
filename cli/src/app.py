@@ -1,28 +1,41 @@
+###########################################################################
+# imports
+###########################################################################
 import asyncio
-import base64
+from dataclasses import dataclass, field
+from io import BytesIO
 import json
 import logging
 import os
-import time
 from enum import Enum
+import re
+import time
 
+from faster_whisper import WhisperModel
 import colorlog
 import numpy as np
-import pvporcupine
 import requests
 import sounddevice as sd
 import websockets
 from dotenv import load_dotenv
-from elevenlabs.client import ElevenLabs
-from groq import Groq
 from halo import Halo
 from pvrecorder import PvRecorder
 from supabase import create_client, Client
+import webrtcvad
+from asr import FasterWhisperASR
+from transcriber import audio_transcriber
+from audio import AudioStream, audio_samples_from_file
 
+
+###########################################################################
 # load env vars
+###########################################################################
 load_dotenv()
 
-# setup logging
+
+###########################################################################
+# logging
+###########################################################################
 handler = colorlog.StreamHandler()
 handler.setFormatter(
     colorlog.ColoredFormatter(
@@ -43,31 +56,32 @@ logger = colorlog.getLogger()
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
+
+###########################################################################
 # libs
-porcupine = pvporcupine.create(
-    access_key=os.getenv("PORCUPINE_API_KEY"),
-    keyword_paths=[os.getenv("KEYWORD_PATH")],
-)
+###########################################################################
 recorder = PvRecorder(
-    frame_length=porcupine.frame_length,
+    frame_length=512,
     device_index=int(os.getenv("SOUND_INPUT_DEVICE")),
 )
-elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
-groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
 supabase: Client = create_client(
     os.environ.get("SUPABASE_URL"),
     os.environ.get("SUPABASE_KEY"),
 )
+vad = webrtcvad.Vad(2)  # Create VAD with aggressiveness level 2
 
+
+###########################################################################
 # constants
+###########################################################################
+WHISPER_MODEL = "base.en"
 SLEEP_TIME = 0.01
 BUFFER_DURATION = 0.5
 FRAME_RATE = 16000
-FRAMES_PER_BUFFER = int(FRAME_RATE * BUFFER_DURATION)
-INITIAL_RECORD_TIME = 0.7
-DURATION = 30
-SILENCE_COUNT_LIMIT = 30
-RECORDER_LOCK = asyncio.Lock()
+VAD_FRAME_SIZE = 480  # Assuming 30ms frames at 16kHz
+BUFFER_DURATION_MS = 500  # 500ms buffer
+VAD_BUFFER_SIZE = BUFFER_DURATION_MS * 16  # 500ms buffer at 16kHz
+COUNT_SILENCE_THRESHOLD = 15
 
 messages = [
     {
@@ -88,165 +102,164 @@ ONLY call generate_image the function when the user specifically asks to create 
 ]
 
 
+###########################################################################
+# locks & shared states
+###########################################################################
+RECORDER_LOCK = asyncio.Lock()  # this lock determines when we need to record/not record
+USER_ENDED_SPEAKING_EVENT = (
+    asyncio.Event()
+)  # this lock determines when the user is done speaking
+HEY_PEACH_DETECTED_LOCK = (
+    asyncio.Lock()
+)  # this lock determines when the user says "hey peach"
+
+
+@dataclass
+class TranscriptionState:
+    transcription: str = ""
+    update_event: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+###########################################################################
+# enums
+###########################################################################
 class WsEvent(Enum):
     AUDIO_UPDATE = "AUDIO_UPDATE"
     AUDIO_END = "AUDIO_END"
     SEND_MESSAGES = "SEND_MESSAGES"
 
 
+class UIState(Enum):
+    IDLING = "idling"
+    RECORDING = "recording"
+    PROCESSING = "processing"
+    IMAGE = "image"
+
+
+###########################################################################
 # cli
-# this will update the frontend
-def update_state(state: str):
-    supabase.table("events").update({"state": state}).eq(
-        "id", os.getenv("SUPABASE_ID")
-    ).execute()
+###########################################################################
 
 
-async def record_audio(queue: asyncio.Queue, recorder: PvRecorder) -> None:
-    update_state("idling")
+# this will update the record in the db, which then updates the frontend
+def db_update_state(new_state: str) -> None:
+    user_id = os.getenv("SUPABASE_ID")
+    supabase.table("events").update({"state": new_state}).eq("id", user_id).execute()
 
-    ui_audio_queue = asyncio.Queue()
-    recorded_data = []
-    buffer_frames = []
 
-    async def send_audio_data(audio_data, event_type):
-        audio_base64 = base64.b64encode(audio_data.tobytes()).decode("utf-8")
-        message = json.dumps({"event": event_type, "audio": audio_base64})
-        await queue.put(message)
-        await ui_audio_queue.put(message)
+# this task will record audio and put it in a queue to be shared between tasks
+async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> None:
+    # start the recorder
+    logging.info("Recording started, start speaking!")
+    recorder.start()
 
-    # run until wake word detected, transcribing audio as it comes in
+    vad_buffer = np.zeros(VAD_BUFFER_SIZE, dtype=np.int16)
+    count_silence = 0
+
     while True:
-        # sleep to avoid blocking the event loop
+        # Pause briefly to avoid blocking the event loop
         await asyncio.sleep(SLEEP_TIME)
 
+        # Skip recording if the recorder is locked (processing or playback)
         if RECORDER_LOCK.locked():
+            logging.info("Recorder locked, skipping")
             continue
 
+        # Read PCM data from the recorder
         pcm = recorder.read()
         if not pcm:
             continue
 
-        isWakeWord = porcupine.process(pcm)
-        if isWakeWord >= 0:
-            logging.info("Wake word detected")
-            break
-
+        # Convert PCM data to numpy array and append to audio stream
         pcm_array = np.array(pcm, dtype=np.int16)
-        recorded_data.append(pcm_array)
-        buffer_frames.extend(pcm_array)
+        audio_samples = audio_samples_from_file(BytesIO(pcm_array.tobytes()))
+        audio_stream.extend(audio_samples)
 
-        if len(buffer_frames) >= FRAMES_PER_BUFFER:
-            # Only use the latest frames_per_buffer frames
-            buffer_to_send = np.array(
-                buffer_frames[-FRAMES_PER_BUFFER:], dtype=np.int16
+        if HEY_PEACH_DETECTED_LOCK.locked():
+            logging.info("Checking for speech...")
+            # Update VAD buffer
+            vad_buffer = np.roll(vad_buffer, -len(pcm_array))
+            vad_buffer[-len(pcm_array) :] = pcm_array
+
+            # Check for speech in the VAD buffer
+            is_speech = any(
+                vad.is_speech(vad_buffer[i : i + VAD_FRAME_SIZE].tobytes(), FRAME_RATE)
+                for i in range(0, len(vad_buffer), VAD_FRAME_SIZE)
             )
-            await asyncio.create_task(
-                send_audio_data(buffer_to_send, WsEvent.AUDIO_UPDATE.value)
-            )
-            buffer_frames = buffer_frames[FRAMES_PER_BUFFER:]
 
-    update_state("recording")
+            logging.info(f"Speech detected: {is_speech}")
 
-    volumes = []
-    start_time = time.time()
-    silence_threshold = 1000
-    silence_counter = 0
+            if is_speech:
+                count_silence = 0
+            else:
+                count_silence += 1
 
-    # now start recording until the user stops talking
-    while True:
-        # sleep to avoid blocking the event loop
-        await asyncio.sleep(SLEEP_TIME)
+            logging.info(f"Count silence: {count_silence}")
 
-        pcm = recorder.read()
-        if not pcm:
-            continue
-
-        pcm_array = np.array(pcm, dtype=np.int16)
-        volume = np.sqrt(np.mean(np.square(pcm_array.astype(np.float32))))
-        logging.info(f"Volume: {volume:.2f}")
-        recorded_data.append(pcm_array)
-        buffer_frames.extend(pcm_array)
-
-        current_time = time.time() - start_time
-
-        if len(buffer_frames) >= FRAMES_PER_BUFFER:
-            # Only use the latest frames_per_buffer frames
-            buffer_to_send = np.array(
-                buffer_frames[-FRAMES_PER_BUFFER:], dtype=np.int16
-            )
-            await asyncio.create_task(
-                send_audio_data(buffer_to_send, WsEvent.AUDIO_UPDATE.value)
-            )
-            buffer_frames = buffer_frames[FRAMES_PER_BUFFER:]
-
-        # Collect volumes for initial period to set threshold
-        if current_time <= INITIAL_RECORD_TIME:
-            volumes.append(volume)
-        elif len(volumes) > 0:
-            silence_threshold = 1.3 * np.median(volumes)
-            volumes = []
-            logging.info(f"Silence threshold set at: {silence_threshold:.2f}")
-
-        # Track silence and record data
-        if volume > silence_threshold:
-            silence_counter = 0
-        else:
-            silence_counter += 1
-            if silence_counter >= SILENCE_COUNT_LIMIT:
-                logging.info("Consecutive silence detected, ending recording.")
-                break
-
-        if current_time > DURATION:
-            logging.info("Maximum duration reached, ending recording.")
-            break
-
-    update_state("processing")
-    await RECORDER_LOCK.acquire()  # block until the lock is released
-
-    end_event_payload = json.dumps(
-        {
-            "event": WsEvent.AUDIO_END.value,
-        }
-    )
-    await queue.put(end_event_payload)
-    await ui_audio_queue.put(end_event_payload)
-
-    await queue.put(
-        json.dumps(
-            {
-                "event": WsEvent.SEND_MESSAGES.value,
-                "messages": messages,
-            }
-        )
-    )
-
-    # closes the websocket_sender
-    await queue.put(None)
+            if count_silence > COUNT_SILENCE_THRESHOLD:
+                logging.info("🔇 User ended speaking, locking...")
+                USER_ENDED_SPEAKING_EVENT.set()
 
 
-async def task_record(queue: asyncio.Queue, recorder: PvRecorder) -> None:
-    while True:
-        await record_audio(queue, recorder)
+def check_hey_peach(transcription: str) -> bool:
+    N = 50
+    # Get the last N characters of the transcription
+    last_N_chars = transcription[-N:].lower()
+
+    # Define the regular expression pattern
+    pattern = r"\bhey\s*,?\s*peach[.!]?\b"
+
+    # Check if the pattern is in the last N characters
+    return bool(re.search(pattern, last_N_chars))
 
 
-async def api_websocket_sender(
-    queue: asyncio.Queue, ws: websockets.WebSocketClientProtocol
+# this task is responsible for reading from the recorder queue and sending the data to the api
+async def task_ws_sender(
+    *,
+    transcription_state: TranscriptionState,
+    ws: websockets.WebSocketClientProtocol,
 ):
     try:
         while True:
+            # Pause briefly to avoid blocking the event loop
             await asyncio.sleep(SLEEP_TIME)
 
-            # Optionally check if the websocket is still open
+            await transcription_state.update_event.wait()
+            transcription = transcription_state.transcription
+            transcription_state.update_event.clear()
+
+            logging.info(f"New transcription: {transcription}")
+
             if ws.closed:
                 logging.info("WebSocket is closed, stopping sender.")
                 break
 
-            data = await queue.get()
-            if data is None:
-                continue
+            if not HEY_PEACH_DETECTED_LOCK.locked() and check_hey_peach(transcription):
+                logging.info("🍑 Hey Peach detected, locking...")
+                await HEY_PEACH_DETECTED_LOCK.acquire()
+                logging.info("Waiting for user to finish speaking...")
 
-            await ws.send(data)
+                await USER_ENDED_SPEAKING_EVENT.wait()
+                logging.info("User finished speaking, getting latest transcription...")
+
+                await transcription_state.update_event.wait()
+                transcription = transcription_state.transcription
+                transcription_state.update_event.clear()
+                logging.info(f"Got transcription: {transcription}")
+
+                logging.info("Handling locks...")
+                await RECORDER_LOCK.acquire()
+                USER_ENDED_SPEAKING_EVENT.clear()
+                HEY_PEACH_DETECTED_LOCK.release()
+
+                messages.append(
+                    dict(
+                        role="user",
+                        content=transcription,
+                    )
+                )
+
+                await ws.send(json.dumps({"messages": messages}))
     except websockets.exceptions.ConnectionClosed as e:
         logging.error(f"WebSocket connection closed unexpectedly: {e}")
     except Exception as e:
@@ -255,37 +268,55 @@ async def api_websocket_sender(
         logging.info("Closed websocket sender")
 
 
-async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
+async def task_ws_receiver(
+    *, ws: websockets.WebSocketClientProtocol, transcription_state: TranscriptionState
+):
     global messages
-    elevenlabs_framerate = 24000
-    stream = sd.OutputStream(samplerate=elevenlabs_framerate, channels=1, dtype="int16")
+    stream = sd.OutputStream(samplerate=24000, channels=1, dtype="int16")
     stream.start()
 
     try:
         while True:
+            await asyncio.sleep(SLEEP_TIME)
+
+            if ws.closed:
+                logging.info("WebSocket is closed, stopping receiver.")
+                break
+
             data = await ws.recv()
             if isinstance(data, bytes):
                 np_data = np.frombuffer(data, dtype=np.int16)
                 stream.write(np_data)
             elif isinstance(data, str):
                 try:
-                    await RECORDER_LOCK.release()
                     parsed_data = json.loads(data)
-                    logging.info(f"Data returned from websocket: {parsed_data}")
+                    logging.info(
+                        f"Data returned from websocket: {parsed_data}, type: {type(parsed_data)}"
+                    )
+                    messages.append(
+                        dict(
+                            role="assistant",
+                            content=parsed_data.get("content"),
+                        )
+                    )
+                    transcription_state.transcription = ""
 
-                    if isinstance(parsed_data, list):
-                        messages.extend(parsed_data)
-                        ai_message = messages[-1]
-                        tool_name = ai_message.get("tool_name")
+                    if RECORDER_LOCK.locked():
+                        RECORDER_LOCK.release()
+
+                    if isinstance(parsed_data, dict):
+                        tool_name = parsed_data.get("tool_name")
                         if tool_name == "generate_image":
-                            update_state(f"image {ai_message.get('tool_res')}")
+                            db_update_state(
+                                f"{UIState.IMAGE} {parsed_data.get('tool_res')}"
+                            )
                         elif tool_name == "get_weather":
-                            update_state(
-                                f"get_weather {json.dumps(ai_message.get('tool_res'))}"
+                            db_update_state(
+                                f"get_weather {json.dumps(parsed_data.get('tool_res'))}"
                             )
                         elif tool_name == "would_you_rather":
-                            update_state(
-                                f"would_you_rather {json.dumps(ai_message.get('tool_res'))}"
+                            db_update_state(
+                                f"would_you_rather {json.dumps(parsed_data.get('tool_res'))}"
                             )
                     else:
                         logging.error(f"Unexpected data structure: {parsed_data}")
@@ -295,8 +326,6 @@ async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
                     logging.error(f"Error processing data: {e}")
             else:
                 logging.error(f"Received unexpected data type: {type(data)}")
-
-            await asyncio.sleep(SLEEP_TIME)
     except websockets.exceptions.ConnectionClosed:
         logging.info("WebSocket connection closed.")
     except Exception as e:
@@ -307,44 +336,80 @@ async def api_websocket_receiver(ws: websockets.WebSocketClientProtocol):
         logging.info("Closed websocket receiver")
 
 
-async def task_ws_handler(queue: asyncio.Queue, api_websocket_url: str):
-    api_websocket = None
+async def task_ws_handler(*, transcription_state: TranscriptionState) -> None:
+    ws = None
 
     try:
-        logging.info("Creating API WebSocket connection")
-        api_websocket = await websockets.connect(api_websocket_url)
-        logging.info("Created API WebSocket connection")
+        logging.info("Creating API WebSocket connection...")
+        ws_url = f"wss://{os.getenv('PEACH_API_URL').replace('https://', '')}/ws"
+        ws = await websockets.connect(ws_url)
+        logging.info("Created API WebSocket connection!")
 
-        sender_task = asyncio.create_task(api_websocket_sender(queue, api_websocket))
-        receiver_task = asyncio.create_task(api_websocket_receiver(api_websocket))
-        await asyncio.gather(sender_task, receiver_task)
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(
+                task_ws_sender(ws=ws, transcription_state=transcription_state)
+            )
+            tg.create_task(
+                task_ws_receiver(ws=ws, transcription_state=transcription_state)
+            )
+    except* Exception as exc:
+        logging.error(f"An error occurred in the WebSocket handler: {exc}")
     finally:
-        if api_websocket:
-            await api_websocket.close()
+        if ws:
+            await ws.close()
             logging.info("Closing API websocket handler")
+
+
+async def task_transcriber(
+    *,
+    audio_stream: AudioStream,
+    transcription_state: TranscriptionState,
+    asr: FasterWhisperASR,
+):
+    async for transcription in audio_transcriber(asr, audio_stream):
+        transcription_state.transcription = transcription.text
+        transcription_state.update_event.set()
 
 
 async def start_recording() -> None:
     try:
-        recorder.start()
-        logging.info("Recording started, start speaking!")
+        # set the initial state
+        logging.info("Setting initial state")
+        db_update_state(UIState.IDLING.value)
+        logging.info("Initial state set")
 
-        api_websocket_url = (
-            f"wss://{os.getenv("PEACH_API_URL").replace("https://", "")}/ws"
+        # created a shared state for the transcription
+        transcription_state = TranscriptionState()
+
+        # setup asr
+        logging.info(f"Loading whisper model {WHISPER_MODEL}...")
+        whisper = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+        logging.info("Loaded whisper model!")
+        asr = FasterWhisperASR(
+            whisper, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500)
         )
-        queue = asyncio.Queue()
+        # this stream holds the audio data to be transcribed
+        audio_stream = AudioStream()
+
+        logging.info("Starting tasks")
+
+        # start the tasks
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(task_ws_handler(queue, api_websocket_url))
-            tg.create_task(task_record(queue, recorder))
-    except KeyboardInterrupt:
-        logging.info("Keyboard interrupt")
+            tg.create_task(task_ws_handler(transcription_state=transcription_state))
+            tg.create_task(task_record(recorder=recorder, audio_stream=audio_stream))
+            tg.create_task(
+                task_transcriber(
+                    audio_stream=audio_stream,
+                    transcription_state=transcription_state,
+                    asr=asr,
+                )
+            )
     finally:
         logging.info("Shutting down audio processing")
-        porcupine.delete()
         recorder.delete()
 
 
-async def main():
+async def main() -> None:
     logging.info("🍑 Peach")
 
     recorder_frame_length = recorder.frame_length

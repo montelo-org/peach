@@ -7,7 +7,7 @@ import numpy as np
 import soundfile as sf
 from numpy.typing import NDArray
 
-from src.config import SAMPLES_PER_SECOND
+from config import SAMPLES_PER_SECOND
 
 
 def audio_samples_from_file(file: BinaryIO) -> NDArray[np.float32]:
@@ -26,9 +26,9 @@ def audio_samples_from_file(file: BinaryIO) -> NDArray[np.float32]:
 
 class Audio:
     def __init__(
-            self,
-            data: NDArray[np.float32] = np.array([], dtype=np.float32),
-            start: float = 0.0,
+        self,
+        data: NDArray[np.float32] = np.array([], dtype=np.float32),
+        start: float = 0.0,
     ) -> None:
         self.data = data
         self.start = start
@@ -46,7 +46,7 @@ class Audio:
 
     def after(self, ts: float) -> Audio:
         assert ts <= self.duration
-        return Audio(self.data[int(ts * SAMPLES_PER_SECOND):], start=ts)
+        return Audio(self.data[int(ts * SAMPLES_PER_SECOND) :], start=ts)
 
     def extend(self, data: NDArray[np.float32]) -> None:
         # logger.debug(f"Extending audio by {len(data) / SAMPLES_PER_SECOND:.2f}s")
@@ -57,9 +57,9 @@ class Audio:
 # TODO: trim data longer than x
 class AudioStream(Audio):
     def __init__(
-            self,
-            data: NDArray[np.float32] = np.array([], dtype=np.float32),
-            start: float = 0.0,
+        self,
+        data: NDArray[np.float32] = np.array([], dtype=np.float32),
+        start: float = 0.0,
     ) -> None:
         super().__init__(data, start)
         self.closed = False
@@ -75,10 +75,9 @@ class AudioStream(Audio):
         assert not self.closed
         self.closed = True
         self.modify_event.set()
-        print("AudioStream closed")
 
     async def chunks(
-            self, min_duration: float
+        self, min_duration: float
     ) -> AsyncGenerator[NDArray[np.float32], None]:
         i = 0.0  # end time of last chunk
         while True:

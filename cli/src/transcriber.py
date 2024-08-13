@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import AsyncGenerator
 
-from src.asr import FasterWhisperASR
-from src.audio import Audio, AudioStream
-from src.config import min_duration
-from src.core import (
+from asr import FasterWhisperASR
+from audio import Audio, AudioStream
+from config import min_duration
+from core import (
     Transcription,
     Word,
     common_prefix,
@@ -72,4 +72,3 @@ async def audio_transcriber(
             yield confirmed
     confirmed.extend(local_agreement.unconfirmed.words)
     yield confirmed
-    print("Audio transcriber finished")
