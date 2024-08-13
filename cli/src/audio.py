@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import multiprocessing
 from typing import AsyncGenerator, BinaryIO
 
 import numpy as np
@@ -54,41 +55,43 @@ class Audio:
         # logger.debug(f"Audio duration: {self.duration:.2f}s")
 
 
-# TODO: trim data longer than x
-class AudioStream(Audio):
-    def __init__(
-        self,
-        data: NDArray[np.float32] = np.array([], dtype=np.float32),
-        start: float = 0.0,
-    ) -> None:
-        super().__init__(data, start)
+class AudioStream:
+    def __init__(self, data_queue: multiprocessing.Queue):
+        self.data_queue = data_queue
         self.closed = False
-
-        self.modify_event = asyncio.Event()
 
     def extend(self, data: NDArray[np.float32]) -> None:
         assert not self.closed
-        super().extend(data)
-        self.modify_event.set()
+        self.data_queue.put(data)
 
     def close(self) -> None:
         assert not self.closed
         self.closed = True
-        self.modify_event.set()
+        self.data_queue.put(None)  # Sentinel value to signal end of stream
 
     async def chunks(
         self, min_duration: float
     ) -> AsyncGenerator[NDArray[np.float32], None]:
-        i = 0.0  # end time of last chunk
+        buffer = np.array([], dtype=np.float32)
         while True:
-            await self.modify_event.wait()
-            self.modify_event.clear()
-            if self.closed or self.duration - i >= min_duration:
-                # If `i` shouldn't be set to `duration` after the yield
-                # because by the time assignment would happen more data might have been added
-                i_ = i
-                i = self.duration
-                # NOTE: probably better to just to a slice
-                yield self.after(i_).data
-            if self.closed:
+            try:
+                while not self.data_queue.empty():
+                    chunk = self.data_queue.get_nowait()
+                    if chunk is None:  # Check for sentinel value
+                        self.closed = True
+                        break
+                    buffer = np.append(buffer, chunk)
+            except (
+                Exception
+            ):  # This includes queue.Empty and any other unexpected errors
+                pass
+
+            if len(buffer) / SAMPLES_PER_SECOND >= min_duration or self.closed:
+                yield buffer
+                buffer = np.array([], dtype=np.float32)
+
+            if self.closed and len(buffer) == 0:
                 return
+
+            if not self.closed:
+                await asyncio.sleep(0.1)  # Adjust as needed

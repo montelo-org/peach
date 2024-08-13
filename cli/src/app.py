@@ -2,16 +2,14 @@
 # imports
 ###########################################################################
 import asyncio
-from dataclasses import dataclass, field
 from io import BytesIO
 import json
 import logging
+import multiprocessing
 import os
 from enum import Enum
 import re
-import time
 
-from faster_whisper import WhisperModel
 import colorlog
 import numpy as np
 import requests
@@ -21,7 +19,6 @@ from dotenv import load_dotenv
 from halo import Halo
 from pvrecorder import PvRecorder
 from supabase import create_client, Client
-import webrtcvad
 from asr import FasterWhisperASR
 from transcriber import audio_transcriber
 from audio import AudioStream, audio_samples_from_file
@@ -68,20 +65,13 @@ supabase: Client = create_client(
     os.environ.get("SUPABASE_URL"),
     os.environ.get("SUPABASE_KEY"),
 )
-vad = webrtcvad.Vad(0)  # Create VAD with aggressiveness level 0
 
 
 ###########################################################################
 # constants
 ###########################################################################
-WHISPER_MODEL = "base.en"
 SLEEP_TIME = 0.01
-BUFFER_DURATION = 0.5
 FRAME_RATE = 16000
-VAD_FRAME_SIZE = 480  # Assuming 30ms frames at 16kHz
-BUFFER_DURATION_MS = 500  # 500ms buffer
-VAD_BUFFER_SIZE = BUFFER_DURATION_MS * 16  # 500ms buffer at 16kHz
-VAD_WINDOW_SIZE = 50  # Number of frames to consider
 SILENCE_RATIO_THRESHOLD = 0.7  # 70% of frames in window must be silent
 
 messages = [
@@ -113,13 +103,6 @@ USER_ENDED_SPEAKING_EVENT = (
 HEY_PEACH_DETECTED_LOCK = (
     asyncio.Lock()
 )  # this lock determines when the user says "hey peach"
-
-
-@dataclass
-class TranscriptionState:
-    processed_transcription: str = ""
-    full_transcription: str = ""
-    update_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 ###########################################################################
@@ -219,6 +202,11 @@ async def task_record(*, recorder: PvRecorder, audio_stream: AudioStream) -> Non
                     logging.info("🔇 User ended speaking, locking...")
                     USER_ENDED_SPEAKING_EVENT.set()
 
+                    # reset variables
+                    silence_threshold = None
+                    silence_window = []
+                    total_samples = 0
+
 
 def check_hey_peach(transcription: str) -> bool:
     N = 50
@@ -235,20 +223,29 @@ def check_hey_peach(transcription: str) -> bool:
 # this task is responsible for reading from the recorder queue and sending the data to the api
 async def task_ws_sender(
     *,
-    transcription_state: TranscriptionState,
+    transcription_queue: multiprocessing.Queue,
     ws: websockets.WebSocketClientProtocol,
 ):
+    processed_transcription = ""
+
     try:
         while True:
             # Pause briefly to avoid blocking the event loop
             await asyncio.sleep(SLEEP_TIME)
 
-            await transcription_state.update_event.wait()
-            transcription_state.update_event.clear()
+            try:
+                transcription = transcription_queue.get(block=False, timeout=0.1)
+                logging.info(f"Got transcription: {transcription}")
+            except multiprocessing.queues.Empty:
+                continue
 
-            diff_transcription = transcription_state.full_transcription[
-                len(transcription_state.processed_transcription) :
-            ].strip()
+            if transcription is None:
+                continue
+
+            logging.info(f"Received transcription: {transcription}")
+            logging.info(f"Processed transcription: {processed_transcription}")
+
+            diff_transcription = transcription[len(processed_transcription) :].strip()
 
             logging.info(f"Diff transcription: {diff_transcription}")
 
@@ -266,15 +263,13 @@ async def task_ws_sender(
                 await USER_ENDED_SPEAKING_EVENT.wait()
                 logging.info("User finished speaking, getting latest transcription...")
 
-                await transcription_state.update_event.wait()
-                diff_transcription = transcription_state.full_transcription[
-                    len(transcription_state.processed_transcription) :
-                ].strip()
-                transcription_state.update_event.clear()
-                logging.info(f"Got transcription: {diff_transcription}")
-                transcription_state.processed_transcription = (
-                    transcription_state.full_transcription
-                )
+                # diff_transcription = transcription_state.full_transcription[
+                #     len(transcription_state.processed_transcription) :
+                # ].strip()
+
+                # logging.info(f"Got transcription: {diff_transcription}")
+
+                processed_transcription = transcription
 
                 logging.info("Handling locks...")
                 await RECORDER_LOCK.acquire()
@@ -380,7 +375,7 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
         logging.info("Closed websocket receiver")
 
 
-async def task_ws_handler(*, transcription_state: TranscriptionState) -> None:
+async def task_ws_handler(*, transcription_queue: multiprocessing.Queue) -> None:
     ws = None
 
     try:
@@ -391,7 +386,7 @@ async def task_ws_handler(*, transcription_state: TranscriptionState) -> None:
 
         async with asyncio.TaskGroup() as tg:
             tg.create_task(
-                task_ws_sender(ws=ws, transcription_state=transcription_state)
+                task_ws_sender(ws=ws, transcription_queue=transcription_queue)
             )
             tg.create_task(task_ws_receiver(ws=ws))
     except* Exception as exc:
@@ -402,58 +397,42 @@ async def task_ws_handler(*, transcription_state: TranscriptionState) -> None:
             logging.info("Closing API websocket handler")
 
 
-async def task_transcriber(
-    *,
-    audio_stream: AudioStream,
-    transcription_state: TranscriptionState,
-    asr: FasterWhisperASR,
-):
+async def worker_transcription(
+    audio_queue: multiprocessing.Queue,
+    transcription_queue: multiprocessing.Queue,
+) -> None:
+    logging.info("Started transcription worker")
+    asr = FasterWhisperASR(
+        "base.en",
+        vad_filter=True,
+        vad_parameters=dict(min_silence_duration_ms=500),
+    )
+    logging.info("ASR initialized")
+
+    audio_stream = AudioStream(audio_queue)
+    logging.info("Audio stream initialized")
     async for transcription in audio_transcriber(asr, audio_stream):
-        logging.info(f"Just transcribed: {transcription.text}")
-        transcription_state.full_transcription = transcription.text
-        transcription_state.update_event.set()
+        logging.info(f"Transcription from worker: {transcription}")
+        transcription_queue.put(transcription.text)
 
 
-async def start_recording() -> None:
-    try:
-        # set the initial state
-        logging.info("Setting initial state")
-        db_update_state(UIState.IDLING.value)
-        logging.info("Initial state set")
-
-        # created a shared state for the transcription
-        transcription_state = TranscriptionState()
-
-        # setup asr
-        asr = FasterWhisperASR(
-            WHISPER_MODEL,
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500),
-        )
-        # this stream holds the audio data to be transcribed
-        audio_stream = AudioStream()
-
-        logging.info("Starting tasks")
-
-        # start the tasks
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(task_ws_handler(transcription_state=transcription_state))
-            tg.create_task(task_record(recorder=recorder, audio_stream=audio_stream))
-            tg.create_task(
-                task_transcriber(
-                    audio_stream=audio_stream,
-                    transcription_state=transcription_state,
-                    asr=asr,
-                )
-            )
-    finally:
-        logging.info("Shutting down audio processing")
-        recorder.delete()
+async def worker_core(
+    audio_queue: multiprocessing.Queue,
+    transcription_queue: multiprocessing.Queue,
+) -> None:
+    logging.info("Started core worker")
+    audio_stream = AudioStream(audio_queue)
+    logging.info("Audio stream initialized")
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(task_ws_handler(transcription_queue=transcription_queue))
+        tg.create_task(task_record(recorder=recorder, audio_stream=audio_stream))
 
 
-async def main() -> None:
-    logging.info("🍑 Peach")
+def run_async_worker(worker_func, *args):
+    asyncio.run(worker_func(*args))
 
+
+def setup() -> None:
     recorder_frame_length = recorder.frame_length
     recorder_sample_rate = recorder.sample_rate
     correct_frame_length = 512
@@ -464,7 +443,7 @@ async def main() -> None:
         )
         exit(1)
     else:
-        logging.info(f"✅ Recorder frame length {recorder_frame_length}")
+        logging.info(f"Correct recorder frame length {recorder_frame_length}")
 
     if recorder_sample_rate != correct_sample_rate:
         logging.error(
@@ -472,7 +451,7 @@ async def main() -> None:
         )
         exit(1)
     else:
-        logging.info(f"✅ Sample rate {recorder_sample_rate}")
+        logging.info(f"Correct sample rate {recorder_sample_rate}")
 
     url = os.getenv("PEACH_API_URL")
     logging.info(f"Checking API at {url}")
@@ -485,8 +464,41 @@ async def main() -> None:
     spinner.succeed("API ok, starting main")
     spinner.stop()
 
-    await start_recording()
+    logging.info("✅ Setup complete\n\n")
+
+
+def main() -> None:
+    logging.info("🍑 Peach\n\n")
+
+    # basic recording/api checks
+    setup()
+
+    # create shared variables among processes
+    audio_queue = multiprocessing.Queue()
+    transcription_queue = multiprocessing.Queue()
+
+    # define the processes
+    p_core = multiprocessing.Process(
+        target=run_async_worker,
+        args=(worker_core, audio_queue, transcription_queue),
+    )
+    p_transcription = multiprocessing.Process(
+        target=run_async_worker,
+        args=(worker_transcription, audio_queue, transcription_queue),
+    )
+
+    logging.info("🚀 Starting processes")
+
+    # start the processes
+    p_core.start()
+    p_transcription.start()
+
+    # wait for the processes to finish
+    p_core.join()
+    p_transcription.join()
+
+    logging.info("🏁 Done")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
