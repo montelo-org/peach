@@ -91,7 +91,7 @@ print(f"Supported sample rates: {sample_rate}")
 stream = p.open(
     format=pyaudio.paInt16,
     channels=1,
-    rate=16000,
+    rate=int(os.getenv("SAMPLE_RATE")),
     input=True,
     frames_per_buffer=512,
     input_device_index=input_device_index,
@@ -486,7 +486,7 @@ def setup() -> None:
     frame_length = stream._frames_per_buffer
     sample_rate = stream._rate
     correct_frame_length = 512
-    correct_sample_rate = 16000
+    correct_sample_rate = int(os.getenv("SAMPLE_RATE"))
 
     if frame_length != correct_frame_length:
         logging.error(
