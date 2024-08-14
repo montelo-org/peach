@@ -139,14 +139,16 @@ async def task_record(
 ) -> None:
     logging.info("Recording started, start speaking!")
     recorder.start()
+    logging.info("after recorder start")
 
     silence_threshold = None
     silent_frame_count = 0
     volume_samples = []
     sample_duration = 0.5  # 500ms
     start_time = None
-
+    
     while True:
+        logging.info("woo")
         await asyncio.sleep(SLEEP_TIME)
 
         if RECORDER_LOCK.locked():
@@ -286,12 +288,14 @@ async def task_ws_sender(
 
 
 async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
+    logging.info("Inside task ws receiver")
     global messages
     stream = sd.OutputStream(samplerate=24000, channels=1, dtype="int16")
     stream.start()
 
     try:
         while True:
+            logging.info("Waiting to receive")
             await asyncio.sleep(SLEEP_TIME)
 
             if ws.closed:
@@ -402,8 +406,9 @@ async def worker_transcription(
     shared_transcription: multiprocessing.Value,
     last_audio_timestamp: multiprocessing.Value,
 ) -> None:
+    logging.info("Inside worker transcription")
     asr = FasterWhisperASR(
-        "base.en",
+        "tiny.en",
         vad_filter=True,
         vad_parameters=dict(min_silence_duration_ms=500),
     )
@@ -425,6 +430,7 @@ async def worker_core(
     shared_transcription: multiprocessing.Value,
     last_audio_timestamp: multiprocessing.Value,
 ) -> None:
+    logging.info("Inside worker core")
     audio_stream = AudioStream(audio_queue)
     async with asyncio.TaskGroup() as tg:
         tg.create_task(
@@ -451,6 +457,11 @@ def setup() -> None:
     recorder_sample_rate = recorder.sample_rate
     correct_frame_length = 512
     correct_sample_rate = 16000
+
+    devices = PvRecorder.get_available_devices()
+    for i in range(len(devices)):
+        logging.info(f"index {i}, device name {devices[i]}")
+
     if recorder_frame_length != correct_frame_length:
         logging.error(
             f"Frame length is {recorder_frame_length}, but should be {correct_frame_length}"
@@ -520,6 +531,7 @@ def main() -> None:
         logging.info("KeyboardInterrupt received, shutting down...")
         # Gracefully stop the recorder
         recorder.stop()
+        recorder.delete()
         # Terminate processes
         p_core.terminate()
         p_transcription.terminate()
