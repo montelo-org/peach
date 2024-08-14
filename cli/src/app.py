@@ -2,7 +2,6 @@
 # imports
 ###########################################################################
 import asyncio
-import contextlib
 import ctypes
 from io import BytesIO
 import json
@@ -20,7 +19,7 @@ import sounddevice as sd
 import websockets
 from dotenv import load_dotenv
 from halo import Halo
-from pvrecorder import PvRecorder
+import pyaudio
 from supabase import create_client, Client
 from asr import FasterWhisperASR
 from transcriber import audio_transcriber
@@ -60,10 +59,16 @@ logger.setLevel(logging.INFO)
 ###########################################################################
 # libs
 ###########################################################################
-recorder = PvRecorder(
-    frame_length=512,
-    device_index=int(os.getenv("SOUND_INPUT_DEVICE")),
+p = pyaudio.PyAudio()
+stream = p.open(
+    format=pyaudio.paInt16,
+    channels=1,
+    rate=16000,
+    input=True,
+    frames_per_buffer=512,
+    input_device_index=int(os.getenv("SOUND_INPUT_DEVICE")),
 )
+
 supabase: Client = create_client(
     os.environ.get("SUPABASE_URL"),
     os.environ.get("SUPABASE_KEY"),
@@ -133,32 +138,30 @@ def db_update_state(new_state: str) -> None:
 # this task will record audio and put it in a queue to be shared between tasks
 async def task_record(
     *,
-    recorder: PvRecorder,
+    stream: pyaudio.Stream,
     audio_stream: AudioStream,
     last_audio_timestamp: multiprocessing.Value,
 ) -> None:
     logging.info("Recording started, start speaking!")
-    recorder.start()
-    logging.info("after recorder start")
+    logging.info("after stream start")
 
     silence_threshold = None
     silent_frame_count = 0
     volume_samples = []
     sample_duration = 0.5  # 500ms
     start_time = None
-    
+
     while True:
-        logging.info("woo")
         await asyncio.sleep(SLEEP_TIME)
 
         if RECORDER_LOCK.locked():
             continue
 
-        pcm = recorder.read()
+        pcm = stream.read(512, exception_on_overflow=False)
         if not pcm:
             continue
 
-        pcm_array = np.array(pcm, dtype=np.int16)
+        pcm_array = np.frombuffer(pcm, dtype=np.int16)
         audio_samples = audio_samples_from_file(BytesIO(pcm_array.tobytes()))
         current_time = int(time.time())
         audio_stream.extend(audio_samples, current_time)
@@ -295,7 +298,6 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
 
     try:
         while True:
-            logging.info("Waiting to receive")
             await asyncio.sleep(SLEEP_TIME)
 
             if ws.closed:
@@ -441,7 +443,7 @@ async def worker_core(
         )
         tg.create_task(
             task_record(
-                recorder=recorder,
+                stream=stream,
                 audio_stream=audio_stream,
                 last_audio_timestamp=last_audio_timestamp,
             )
@@ -453,30 +455,26 @@ def run_async_worker(worker_func, *args):
 
 
 def setup() -> None:
-    recorder_frame_length = recorder.frame_length
-    recorder_sample_rate = recorder.sample_rate
+    frame_length = stream._frames_per_buffer
+    sample_rate = stream._rate
     correct_frame_length = 512
     correct_sample_rate = 16000
 
-    devices = PvRecorder.get_available_devices()
-    for i in range(len(devices)):
-        logging.info(f"index {i}, device name {devices[i]}")
-
-    if recorder_frame_length != correct_frame_length:
+    if frame_length != correct_frame_length:
         logging.error(
-            f"Frame length is {recorder_frame_length}, but should be {correct_frame_length}"
+            f"Frame length is {frame_length}, but should be {correct_frame_length}"
         )
         exit(1)
     else:
-        logging.info(f"Correct recorder frame length {recorder_frame_length}")
+        logging.info(f"Correct frame length {frame_length}")
 
-    if recorder_sample_rate != correct_sample_rate:
+    if sample_rate != correct_sample_rate:
         logging.error(
-            f"Sample rate is {recorder_sample_rate}, but should be {correct_sample_rate}"
+            f"Sample rate is {sample_rate}, but should be {correct_sample_rate}"
         )
         exit(1)
     else:
-        logging.info(f"Correct sample rate {recorder_sample_rate}")
+        logging.info(f"Correct sample rate {sample_rate}")
 
     url = os.getenv("PEACH_API_URL")
     logging.info(f"Checking API at {url}")
@@ -529,9 +527,9 @@ def main() -> None:
         p_transcription.join()
     except KeyboardInterrupt:
         logging.info("KeyboardInterrupt received, shutting down...")
-        # Gracefully stop the recorder
-        recorder.stop()
-        recorder.delete()
+        # Gracefully stop the stream
+        stream.stop_stream()
+        stream.close()
         # Terminate processes
         p_core.terminate()
         p_transcription.terminate()

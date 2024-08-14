@@ -20,6 +20,7 @@ supabase = "^2.6.0"
 faster-whisper = "^1.0.3"
 webrtcvad = "^2.0.10"
 aiodebug = "^2.3.0"
+pyaudio = "^0.2.14"
 
 
 [build-system]
