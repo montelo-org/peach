@@ -11,6 +11,7 @@ import os
 from enum import Enum
 import re
 import time
+from typing import List
 
 import colorlog
 import numpy as np
@@ -59,17 +60,41 @@ logger.setLevel(logging.INFO)
 ###########################################################################
 # libs
 ###########################################################################
+def find_supported_sample_rate(p, device_index) -> List[int]:
+    info = p.get_device_info_by_index(device_index)
+    rates = [8000, 16000, 32000, 44100, 48000]  # Common sample rates
+    supported_rates = []
+    for rate in rates:
+        try:
+            p.is_format_supported(
+                rate,
+                input_device=device_index,
+                input_channels=info["maxInputChannels"],
+                input_format=pyaudio.paInt16,
+            )
+            supported_rates.append(rate)
+        except ValueError:
+            continue
+    return supported_rates
+
+
 p = pyaudio.PyAudio()
+
 for i in range(p.get_device_count()):
     dev = p.get_device_info_by_index(i)
     print(f"Device {i}: {dev['name']}, Channels: {dev['maxInputChannels']}")
+
+input_device_index = int(os.getenv("SOUND_INPUT_DEVICE"))
+sample_rate = find_supported_sample_rate(p, input_device_index)
+print(f"Supported sample rates: {sample_rate}")
+
 stream = p.open(
     format=pyaudio.paInt16,
     channels=1,
     rate=16000,
     input=True,
     frames_per_buffer=512,
-    input_device_index=int(os.getenv("SOUND_INPUT_DEVICE")),
+    input_device_index=input_device_index,
 )
 
 supabase: Client = create_client(
