@@ -8,6 +8,7 @@ import json
 import multiprocessing
 import os
 import time
+import scipy
 
 import numpy as np
 import sounddevice as sd
@@ -67,7 +68,8 @@ async def task_record(
     chunk_buffer = np.array([], dtype=np.float32)
 
     while True:
-        await asyncio.sleep(constants.SLEEP_TIME)  # Small sleep to prevent busy-waiting
+        # Small sleep to prevent busy-waiting
+        await asyncio.sleep(constants.SLEEP_TIME)
 
         if RECORDER_LOCK.locked():
             continue
@@ -77,7 +79,13 @@ async def task_record(
             continue
 
         pcm_array = np.frombuffer(pcm, dtype=np.int16)
-        audio_samples = audio_samples_from_file(BytesIO(pcm_array.tobytes()))
+        # Resample from 44100 Hz to 16000 Hz
+        resampled_pcm = scipy.signal.resample(
+            pcm_array, int(len(pcm_array) * 16000 / 44100)
+        )
+        audio_samples = audio_samples_from_file(
+            BytesIO(resampled_pcm.astype(np.int16).tobytes())
+        )
 
         # Add samples to the chunk buffer
         chunk_buffer = np.append(chunk_buffer, audio_samples)

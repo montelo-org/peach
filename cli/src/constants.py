@@ -3,7 +3,8 @@ from enum import Enum
 CORRECT_NUM_CHANNELS = 1
 CORRECT_FRAME_LENGTH = 512
 SLEEP_TIME = 0.01
-SAMPLE_RATE = 16000
+SAMPLE_RATE = 16000  # sample rate of the recording/processing
+MIC_SAMPLE_RATE = 44100  # sample rate of the mic
 FRAME_DURATION_MS = 30
 SAMPLES_PER_FRAME = int(SAMPLE_RATE * FRAME_DURATION_MS / 1000)
 FRAME_SIZE_BYTES = SAMPLES_PER_FRAME * 2  # 2 bytes per sample for 16-bit audio

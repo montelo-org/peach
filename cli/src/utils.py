@@ -44,11 +44,10 @@ def get_stream() -> Tuple[Stream, PyAudio]:
     # another stream is created in worker_core that is used for recording
     p = PyAudio()
     list_audio_devices(p)
-    logger.info("Reached here")
     stream = p.open(
         format=paInt16,
         channels=constants.CORRECT_NUM_CHANNELS,
-        rate=constants.SAMPLE_RATE,
+        rate=constants.MIC_SAMPLE_RATE,
         input=True,
         frames_per_buffer=constants.CORRECT_FRAME_LENGTH,
         input_device_index=input_device_index,
