@@ -53,11 +53,10 @@ def list_audio_devices(p: PyAudio):
 def get_stream() -> Tuple[Stream, PyAudio]:
     input_device_index = int(os.getenv("SOUND_INPUT_DEVICE"))
 
-    list_audio_devices(p)
-
     # this is a stream that we only use for setup
     # another stream is created in worker_core that is used for recording
     p = PyAudio()
+    list_audio_devices(p)
     stream = p.open(
         format=paInt16,
         channels=constants.CORRECT_NUM_CHANNELS,
