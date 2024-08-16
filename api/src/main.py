@@ -192,7 +192,6 @@ async def transcribe_stream(ws: WebSocket):
     def ai(messages) -> dict[str, str]:
         start_time = time.time()
 
-        print("messages: ", messages)
         completion = openai.chat.completions.create(
             model=openai_model,
             messages=messages,
@@ -358,7 +357,6 @@ async def transcribe_stream(ws: WebSocket):
             cartesia_ws.close()
 
     async def is_user_intent_to_chat(messages) -> bool:
-        print("is_user_intent_to_chat")
         completion = groq.chat.completions.create(
             model=groq_small_model,
             messages=[
@@ -372,7 +370,6 @@ async def transcribe_stream(ws: WebSocket):
                 },
             ],
         )
-        print("completion: ", completion.choices[0].message.content)
         return completion.choices[0].message.content == "true"
 
     async def core(
@@ -382,12 +379,15 @@ async def transcribe_stream(ws: WebSocket):
     ):
         print("Starting core")
 
+        print("messages: ", messages)
+
         try:
-            print("Checking user intent to chat")
             user_has_intent_to_chat = await is_user_intent_to_chat(messages)
             if not user_has_intent_to_chat:
+                print("User does not have intent to chat, returning")
                 await ws.send_json(dict(event="no_intent_to_chat"))
                 return
+            print("User has intent to chat, continuing")
             ai_response = ai(messages)
         except Exception as e:
             print(e)
@@ -416,12 +416,11 @@ async def transcribe_stream(ws: WebSocket):
                 {
                     "role": "user",
                     "content": json.dumps(
-                        [*messages, dict(role="assistant", **ai_content)]
+                        [*messages, dict(role="assistant", **ai_response)]
                     ),
                 },
             ],
         )
-        print("completion: ", completion.choices[0].message.content)
         should_continue_listening = completion.choices[0].message.content == "true"
         print("should_continue_listening: ", should_continue_listening)
         await ws.send_json(

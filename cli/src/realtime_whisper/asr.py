@@ -4,8 +4,9 @@ from typing import Iterable
 
 from faster_whisper import transcribe, WhisperModel
 
-from audio import Audio
-from core import Transcription, Word
+from realtime_whisper.audio import Audio
+from realtime_whisper.core import Transcription, Word
+from custom_logger import logger
 
 
 class FasterWhisperASR:
@@ -34,8 +35,8 @@ class FasterWhisperASR:
             word.offset(audio.start)
         transcription = Transcription(words)
         end = time.perf_counter()
-        print(
-            f"Transcribed {audio} in {end - start:.2f} seconds. Transcription: {transcription.text}"
+        logger.info(
+            f"Transcribed {audio} in {end - start:.2f} seconds.\nTranscription: {transcription.text}"
         )
         return (transcription, transcription_info)
 

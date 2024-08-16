@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from config import word_timestamp_error_margin
+from realtime_whisper.config import word_timestamp_error_margin
 
 
 # TODO: use the `Segment` from `faster-whisper.transcribe` instead

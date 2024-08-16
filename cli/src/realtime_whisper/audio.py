@@ -7,7 +7,7 @@ import numpy as np
 import soundfile as sf
 from numpy.typing import NDArray
 
-from config import SAMPLES_PER_SECOND
+from realtime_whisper.config import SAMPLES_PER_SECOND
 
 
 def audio_samples_from_file(file: BinaryIO) -> NDArray[np.float32]:
