@@ -65,7 +65,11 @@ async def audio_transcriber(
     async for timestamp, chunk in audio_stream.chunks(min_duration):
         full_audio.extend(chunk)
         audio = full_audio.after(needs_audio_after(confirmed))
+        print(
+            f"[audio_transcriber] Transcribing audio: {audio.duration} seconds at {timestamp}"
+        )
         transcription, _ = await asr.transcribe(audio, prompt(confirmed))
+        print(f"[audio_transcriber] Transcription: {transcription.text} at {timestamp}")
         new_words = local_agreement.merge(confirmed, transcription)
         if len(new_words) > 0:
             confirmed.extend(new_words)

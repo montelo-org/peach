@@ -5,15 +5,12 @@ import asyncio
 import ctypes
 from io import BytesIO
 import json
-import logging
 import multiprocessing
 import os
-from enum import Enum
 import re
 import time
 from typing import List
 
-import colorlog
 import numpy as np
 import requests
 import sounddevice as sd
@@ -22,39 +19,29 @@ from dotenv import load_dotenv
 from halo import Halo
 import pyaudio
 from supabase import create_client, Client
+import webrtcvad
+
 from asr import FasterWhisperASR
-from transcriber import audio_transcriber
-from audio import AudioStream, audio_samples_from_file
+from transcriber import LocalAgreement, needs_audio_after, prompt
+from audio import Audio, AudioStream, audio_samples_from_file
+from core import Transcription
+from config import (
+    SLEEP_TIME,
+    SAMPLE_RATE,
+    SAMPLES_PER_FRAME,
+    FRAME_SIZE_BYTES,
+    VAD_MODE,
+    CONSECUTIVE_SILENCE_THRESHOLD,
+    messages,
+    UIState,
+)
+from custom_logger import logger
 
 
 ###########################################################################
 # load env vars
 ###########################################################################
 load_dotenv()
-
-
-###########################################################################
-# logging
-###########################################################################
-handler = colorlog.StreamHandler()
-handler.setFormatter(
-    colorlog.ColoredFormatter(
-        "%(log_color)s%(asctime)s - %(funcName)s - %(message)s",
-        datefmt="%H:%M:%S",
-        log_colors={
-            "DEBUG": "cyan",
-            "INFO": "green",
-            "WARNING": "yellow",
-            "ERROR": "red",
-            "CRITICAL": "bold_red,bg_white",
-        },
-        secondary_log_colors={},
-        style="%",
-    )
-)
-logger = colorlog.getLogger()
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
 
 
 ###########################################################################
@@ -82,11 +69,11 @@ p = pyaudio.PyAudio()
 
 for i in range(p.get_device_count()):
     dev = p.get_device_info_by_index(i)
-    print(f"Device {i}: {dev['name']}, Channels: {dev['maxInputChannels']}")
+    logger.debug(f"Device {i}: {dev['name']}, Channels: {dev['maxInputChannels']}")
 
 input_device_index = int(os.getenv("SOUND_INPUT_DEVICE"))
 sample_rate = find_supported_sample_rate(p, input_device_index)
-print(f"Supported sample rates: {sample_rate}")
+logger.debug(f"Supported sample rates: {sample_rate}")
 
 stream = p.open(
     format=pyaudio.paInt16,
@@ -104,32 +91,6 @@ supabase: Client = create_client(
 
 
 ###########################################################################
-# constants
-###########################################################################
-SLEEP_TIME = 0.01
-FRAME_RATE = 16000
-CONSECUTIVE_SILENT_FRAMES = 30
-
-messages = [
-    {
-        "role": "system",
-        "content": """You are Peach, a helpful home assistant.
-
-Instructions:
-You will be speaking back to the user via audio, so be conversational and imagine the words you choose to say as being spoken back to the user. 
-Be brief and concise and straight to the point. Respond with at most 2 sentences.
-Answer the user"s question without adding additional phrases or unimportant information.
-Simply respond with the answer to the user"s request.
-If the user asks to be dirty, don"t be shy and be dirty!
-ONLY RESPOND WITH THE ANSWER TO THE USER"S REQUEST. DO NOT ADD UNNECESSARY INFORMATION.
-
-ONLY call generate_image the function when the user specifically asks to create an image. Otherwise, do not call any tool.
-""",
-    }
-]
-
-
-###########################################################################
 # locks
 ###########################################################################
 RECORDER_LOCK = asyncio.Lock()  # this lock determines when we need to record/not record
@@ -140,16 +101,6 @@ USER_ENDED_SPEAKING_EVENT = (
     asyncio.Event()
 )  # this lock determines when the user is done speaking
 LAST_AUDIO_PROCESSED_EVENT = asyncio.Event()
-
-
-###########################################################################
-# enums
-###########################################################################
-class UIState(Enum):
-    IDLING = "idling"
-    RECORDING = "recording"
-    PROCESSING = "processing"
-    IMAGE = "image"
 
 
 ###########################################################################
@@ -166,79 +117,85 @@ def db_update_state(new_state: str) -> None:
 # this task will record audio and put it in a queue to be shared between tasks
 async def task_record(
     *,
+    audio_queue: multiprocessing.Queue,
     stream: pyaudio.Stream,
-    audio_stream: AudioStream,
     last_audio_timestamp: multiprocessing.Value,
 ) -> None:
-    logging.info("Recording started, start speaking!")
-    logging.info("after stream start")
+    logger.info("Recording started, start speaking!")
+    logger.info("after stream start")
 
-    silence_threshold = None
-    silent_frame_count = 0
-    volume_samples = []
-    sample_duration = 0.5  # 500ms
-    start_time = None
+    vad = webrtcvad.Vad(VAD_MODE)
+    consecutive_silence_frames = 0
+    audio_stream = AudioStream(audio_queue)
+
+    chunk_buffer = np.array([], dtype=np.float32)
 
     while True:
-        await asyncio.sleep(SLEEP_TIME)
+        await asyncio.sleep(SLEEP_TIME)  # Small sleep to prevent busy-waiting
 
         if RECORDER_LOCK.locked():
             continue
 
-        pcm = stream.read(512, exception_on_overflow=False)
+        pcm = stream.read(SAMPLES_PER_FRAME, exception_on_overflow=False)
         if not pcm:
             continue
 
         pcm_array = np.frombuffer(pcm, dtype=np.int16)
         audio_samples = audio_samples_from_file(BytesIO(pcm_array.tobytes()))
-        current_time = int(time.time())
-        audio_stream.extend(audio_samples, current_time)
+
+        # Add samples to the chunk buffer
+        chunk_buffer = np.append(chunk_buffer, audio_samples)
+
+        # Check if we have collected 1 second of audio
+        if len(chunk_buffer) >= SAMPLE_RATE:
+            current_time = int(time.time())
+            # Send the 1-second chunk to the audio queue
+            audio_stream.extend(chunk_buffer[:SAMPLE_RATE], current_time)
+            # Keep any remaining samples for the next chunk
+            chunk_buffer = chunk_buffer[SAMPLE_RATE:]
 
         if HEY_PEACH_DETECTED_LOCK.locked() and not USER_ENDED_SPEAKING_EVENT.is_set():
-            volume = np.sqrt(np.mean(np.square(pcm_array.astype(np.float32))))
-            logging.info(f"Volume: {volume:.2f}")
+            try:
+                # Ensure we have exactly the right number of bytes
+                if len(pcm) != FRAME_SIZE_BYTES:
+                    logger.warning(
+                        f"Unexpected frame size: {len(pcm)} bytes, expected {FRAME_SIZE_BYTES}"
+                    )
+                    continue
 
-            if silence_threshold is None:
-                if start_time is None:
-                    start_time = time.time()
+                is_speech = vad.is_speech(pcm, SAMPLE_RATE)
 
-                volume_samples.append(volume)
-
-                if time.time() - start_time >= sample_duration:
-                    # Calculate silence threshold based on 500ms sample
-                    silence_threshold = max(np.mean(volume_samples) * 1.2, 50)
-                    logging.info(f"Silence threshold set: {silence_threshold}")
-                    volume_samples.clear()
-                    start_time = None
-            else:
-                is_silent = volume < silence_threshold
-                if is_silent:
-                    silent_frame_count += 1
+                if is_speech:
+                    consecutive_silence_frames = 0
                 else:
-                    silent_frame_count = 0
+                    consecutive_silence_frames += 1
 
-                if silent_frame_count >= CONSECUTIVE_SILENT_FRAMES:
-                    logging.info(
-                        f"🔇 User ended speaking, locking, last timestamp is {current_time}..."
+                if consecutive_silence_frames >= CONSECUTIVE_SILENCE_THRESHOLD:
+                    logger.info(
+                        f"🔇 User ended speaking, locking, last timestamp is {current_time}"
                     )
                     await RECORDER_LOCK.acquire()
                     USER_ENDED_SPEAKING_EVENT.set()
                     last_audio_timestamp.value = current_time
 
-                    # reset variables
-                    silence_threshold = None
-                    silent_frame_count = 0
-                    volume_samples.clear()
-                    start_time = None
+                    # Send any remaining audio in the buffer
+                    if len(chunk_buffer) > 0:
+                        audio_stream.extend(chunk_buffer, current_time)
+
+            except Exception as e:
+                logger.error(f"Error in VAD processing: {e}")
+                logger.error(f"Frame size: {len(pcm)} bytes")
+                logger.error(f"Frame content (first 10 bytes): {pcm[:10]}")
+                continue  # Skip this frame and continue with the next one
 
 
-def check_hey_peach(transcription: str) -> bool:
-    N = 50
+def check_peach(transcription: str) -> bool:
+    N = 100
     # Get the last N characters of the transcription
     last_N_chars = transcription[-N:].lower()
 
     # Define the regular expression pattern
-    pattern = r"\bhey\s*,?\s*peach[.!]?\b"
+    pattern = r"\bpeach[.!]?\b"
 
     # Check if the pattern is in the last N characters
     return bool(re.search(pattern, last_N_chars))
@@ -258,6 +215,10 @@ async def task_ws_sender(
             # Pause briefly to avoid blocking the event loop
             await asyncio.sleep(SLEEP_TIME)
 
+            if ws.closed:
+                logger.info("WebSocket is closed, stopping sender.")
+                break
+
             if shared_transcription.value == "":
                 continue
 
@@ -265,37 +226,31 @@ async def task_ws_sender(
                 len(processed_transcription) :
             ].strip()
 
-            if ws.closed:
-                logging.info("WebSocket is closed, stopping sender.")
-                break
-
-            if not HEY_PEACH_DETECTED_LOCK.locked() and check_hey_peach(
-                diff_transcription
-            ):
-                logging.info("🍑 Hey Peach detected, locking...")
+            if check_peach(diff_transcription):
+                logger.info("🍑 Hey Peach detected, locking...")
                 await HEY_PEACH_DETECTED_LOCK.acquire()
-                logging.info("Waiting for user to finish speaking...")
+                logger.info("Waiting for user to finish speaking...")
 
                 await USER_ENDED_SPEAKING_EVENT.wait()
-                logging.info(
+                logger.info(
                     "User finished speaking, waiting for latest transcription..."
                 )
 
-                try:
-                    await asyncio.wait_for(LAST_AUDIO_PROCESSED_EVENT.wait(), 1)
-                except asyncio.TimeoutError:
-                    logging.info("Timeout waiting for last audio processed event")
+                # wait for the last audio processed event
+                # this is a hack to wait for the transcription to finish
+                # should make this event driven but i tried and failed big F
+                await asyncio.sleep(0.8)
 
-                logging.info(f"Latest transcription: {shared_transcription.value}")
+                logger.info(f"Latest transcription: {shared_transcription.value}")
 
                 diff_transcription = shared_transcription.value[
                     len(processed_transcription) :
                 ].strip()
                 processed_transcription = shared_transcription.value
 
-                logging.info(f"Diff transcription: {diff_transcription}")
+                logger.info(f"Diff transcription: {diff_transcription}")
 
-                logging.info("Handling locks...")
+                logger.info("Handling locks...")
                 USER_ENDED_SPEAKING_EVENT.clear()
                 HEY_PEACH_DETECTED_LOCK.release()
                 LAST_AUDIO_PROCESSED_EVENT.clear()
@@ -311,15 +266,15 @@ async def task_ws_sender(
                 await ws.send(json.dumps({"messages": messages}))
                 db_update_state(UIState.PROCESSING.value)
     except websockets.exceptions.ConnectionClosed as e:
-        logging.error(f"WebSocket connection closed unexpectedly: {e}")
+        logger.error(f"WebSocket connection closed unexpectedly: {e}")
     except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
+        logger.error(f"An unexpected error occurred: {e}")
     finally:
-        logging.info("Closed websocket sender")
+        logger.info("Closed websocket sender")
 
 
 async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
-    logging.info("Inside task ws receiver")
+    logger.info("Inside task ws receiver")
     global messages
     stream = sd.OutputStream(samplerate=24000, channels=1, dtype="int16")
     stream.start()
@@ -329,7 +284,7 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
             await asyncio.sleep(SLEEP_TIME)
 
             if ws.closed:
-                logging.info("WebSocket is closed, stopping receiver.")
+                logger.info("WebSocket is closed, stopping receiver.")
                 break
 
             data = await ws.recv()
@@ -339,9 +294,16 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
             elif isinstance(data, str):
                 try:
                     parsed_data = json.loads(data)
-                    logging.info(
+                    logger.info(
                         f"Data returned from websocket: {parsed_data}, type: {type(parsed_data)}"
                     )
+
+                    if parsed_data.get("event") == "no_intent_to_chat":
+                        logger.info("User does not have intent to chat")
+                        if RECORDER_LOCK.locked():
+                            RECORDER_LOCK.release()
+                        return
+
                     messages.append(
                         dict(
                             role="assistant",
@@ -351,7 +313,7 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
 
                     # we sleep here to give the audio enough time to finish
                     # obv a hack but it works
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.8)
 
                     # release the recorder lock
                     if RECORDER_LOCK.locked():
@@ -359,23 +321,23 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
 
                     if isinstance(parsed_data, dict):
                         tool_name = parsed_data.get("tool_name")
-                        logging.info(f"Tool name: {tool_name}")
+                        logger.info(f"Tool name: {tool_name}")
                         if tool_name == "generate_image":
-                            logging.info(
+                            logger.info(
                                 f"Generating image: {parsed_data.get('tool_res')}"
                             )
                             db_update_state(
                                 f"{UIState.IMAGE} {parsed_data.get('tool_res')}"
                             )
                         elif tool_name == "get_weather":
-                            logging.info(
+                            logger.info(
                                 f"Getting weather: {json.dumps(parsed_data.get('tool_res'))}"
                             )
                             db_update_state(
                                 f"get_weather {json.dumps(parsed_data.get('tool_res'))}"
                             )
                         elif tool_name == "would_you_rather":
-                            logging.info(
+                            logger.info(
                                 f"Would you rather: {json.dumps(parsed_data.get('tool_res'))}"
                             )
                             db_update_state(
@@ -383,22 +345,28 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
                             )
                         else:
                             db_update_state(UIState.IDLING.value)
+
+                        should_continue_listening = parsed_data.get(
+                            "should_continue_listening"
+                        )
+                        # if should_continue_listening:
+                        #     await ws.send_json(dict(role="user", content=diff_transcription))
                     else:
-                        logging.error(f"Unexpected data structure: {parsed_data}")
+                        logger.error(f"Unexpected data structure: {parsed_data}")
                 except json.JSONDecodeError:
-                    logging.error(f"Failed to parse JSON: {data}")
+                    logger.error(f"Failed to parse JSON: {data}")
                 except Exception as e:
-                    logging.error(f"Error processing data: {e}")
+                    logger.error(f"Error processing data: {e}")
             else:
-                logging.error(f"Received unexpected data type: {type(data)}")
+                logger.error(f"Received unexpected data type: {type(data)}")
     except websockets.exceptions.ConnectionClosed:
-        logging.info("WebSocket connection closed.")
+        logger.info("WebSocket connection closed.")
     except Exception as e:
-        logging.error(f"Unhandled error: {e}")
+        logger.error(f"Unhandled error: {e}")
     finally:
         stream.stop()
         stream.close()
-        logging.info("Closed websocket receiver")
+        logger.info("Closed websocket receiver")
 
 
 async def task_ws_handler(
@@ -409,10 +377,10 @@ async def task_ws_handler(
     ws = None
 
     try:
-        logging.info("Creating API WebSocket connection...")
+        logger.info("Creating API WebSocket connection...")
         ws_url = f"wss://{os.getenv('PEACH_API_URL').replace('https://', '')}/ws"
         ws = await websockets.connect(ws_url)
-        logging.info("Created API WebSocket connection!")
+        logger.info("Created API WebSocket connection!")
 
         async with asyncio.TaskGroup() as tg:
             tg.create_task(
@@ -424,11 +392,11 @@ async def task_ws_handler(
             )
             tg.create_task(task_ws_receiver(ws=ws))
     except* Exception as exc:
-        logging.error(f"An error occurred in the WebSocket handler: {exc}")
+        logger.error(f"An error occurred in the WebSocket handler: {exc}")
     finally:
         if ws:
             await ws.close()
-            logging.info("Closing API websocket handler")
+            logger.info("Closing API websocket handler")
 
 
 async def worker_transcription(
@@ -436,23 +404,49 @@ async def worker_transcription(
     shared_transcription: multiprocessing.Value,
     last_audio_timestamp: multiprocessing.Value,
 ) -> None:
-    logging.info("Inside worker transcription")
+    logger.info("Inside worker transcription")
     asr = FasterWhisperASR(
         "tiny.en",
         vad_filter=True,
         vad_parameters=dict(min_silence_duration_ms=500),
     )
-    audio_stream = AudioStream(audio_queue)
-    async for timestamp, transcription in audio_transcriber(asr, audio_stream):
-        shared_transcription.value = transcription.text
-        logging.info(
-            f"Transcription: {transcription.text} at {timestamp}, last audio timestamp: {last_audio_timestamp.value}"
+    local_agreement = LocalAgreement()
+    full_audio = Audio()
+    confirmed = Transcription()
+
+    while True:
+        await asyncio.sleep(SLEEP_TIME)
+
+        item = audio_queue.get()
+        if item is None:
+            continue
+
+        timestamp, chunk = item
+
+        full_audio.extend(chunk)
+        audio = full_audio.after(needs_audio_after(confirmed))
+        print(
+            f"[worker_transcription] Transcribing audio: {audio.duration} seconds at {timestamp}"
         )
-        if abs(timestamp - last_audio_timestamp.value) <= 30:
-            logging.info(
-                "New transcription is newer than last audio timestamp, setting event"
+
+        transcription, _ = await asr.transcribe(audio, prompt(confirmed))
+        print(
+            f"[worker_transcription] Transcription: {transcription.text} at {timestamp}"
+        )
+
+        new_words = local_agreement.merge(confirmed, transcription)
+        if len(new_words) > 0:
+            confirmed.extend(new_words)
+            shared_transcription.value = confirmed.text
+            logger.info(
+                f"Transcription: {confirmed.text} at {timestamp}, last audio timestamp: {last_audio_timestamp.value}"
             )
-            LAST_AUDIO_PROCESSED_EVENT.set()
+            last_audio_timestamp.value = int(timestamp)
+            if timestamp >= last_audio_timestamp.value:
+                logger.info(
+                    "New transcription is newer than last audio timestamp, setting event"
+                )
+                LAST_AUDIO_PROCESSED_EVENT.set()
 
 
 async def worker_core(
@@ -460,8 +454,7 @@ async def worker_core(
     shared_transcription: multiprocessing.Value,
     last_audio_timestamp: multiprocessing.Value,
 ) -> None:
-    logging.info("Inside worker core")
-    audio_stream = AudioStream(audio_queue)
+    logger.info("Inside worker core")
     async with asyncio.TaskGroup() as tg:
         tg.create_task(
             task_ws_handler(
@@ -471,15 +464,18 @@ async def worker_core(
         )
         tg.create_task(
             task_record(
+                audio_queue=audio_queue,
                 stream=stream,
-                audio_stream=audio_stream,
                 last_audio_timestamp=last_audio_timestamp,
             )
         )
 
 
 def run_async_worker(worker_func, *args):
-    asyncio.run(worker_func(*args))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(worker_func(*args))
+    loop.close()
 
 
 def setup() -> None:
@@ -489,23 +485,23 @@ def setup() -> None:
     correct_sample_rate = 16000
 
     if frame_length != correct_frame_length:
-        logging.error(
+        logger.error(
             f"Frame length is {frame_length}, but should be {correct_frame_length}"
         )
         exit(1)
     else:
-        logging.info(f"Correct frame length {frame_length}")
+        logger.info(f"Correct frame length {frame_length}")
 
     if sample_rate != correct_sample_rate:
-        logging.error(
+        logger.error(
             f"Sample rate is {sample_rate}, but should be {correct_sample_rate}"
         )
         exit(1)
     else:
-        logging.info(f"Correct sample rate {sample_rate}")
+        logger.info(f"Correct sample rate {sample_rate}")
 
     url = os.getenv("PEACH_API_URL")
-    logging.info(f"Checking API at {url}")
+    logger.info(f"Checking API at {url}")
     spinner = Halo(text="Loading", spinner="dots")
     spinner.start()
     res = requests.get(f"{url}/health")
@@ -515,11 +511,11 @@ def setup() -> None:
     spinner.succeed("API ok, starting main")
     spinner.stop()
 
-    logging.info("✅ Setup complete\n\n")
+    logger.info("✅ Setup complete\n\n")
 
 
 def main() -> None:
-    logging.info("🍑 Peach\n\n")
+    logger.info("🍑 Peach\n\n")
 
     # basic recording/api checks
     setup()
@@ -546,7 +542,7 @@ def main() -> None:
     )
 
     try:
-        logging.info("🚀 Starting processes")
+        logger.info("🚀 Starting processes")
         p_core.start()
         p_transcription.start()
 
@@ -554,7 +550,7 @@ def main() -> None:
         p_core.join()
         p_transcription.join()
     except KeyboardInterrupt:
-        logging.info("KeyboardInterrupt received, shutting down...")
+        logger.info("KeyboardInterrupt received, shutting down...")
         # Gracefully stop the stream
         stream.stop_stream()
         stream.close()
@@ -563,11 +559,11 @@ def main() -> None:
         p_transcription.terminate()
         p_core.join()
         p_transcription.join()
-        logging.info("Resources have been cleanly shutdown.")
+        logger.info("Resources have been cleanly shutdown.")
     except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
+        logger.error(f"An unexpected error occurred: {e}")
     finally:
-        logging.info("🏁 Done")
+        logger.info("🏁 Done")
 
 
 if __name__ == "__main__":

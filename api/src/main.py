@@ -1,12 +1,11 @@
 import json
 import time
-from enum import Enum
 
 import requests
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.websockets import WebSocket
-from modal import Image, asgi_app, Secret, App
+from modal import Image, asgi_app, Secret, App, Dict
 
 
 app = App("peach-api")
@@ -26,13 +25,27 @@ web_app.add_middleware(
 )
 
 secret_name = "peach-secrets"
+globals = Dict.from_name("globals", create_if_missing=True)
 
 
-image = Image.debian_slim(python_version="3.11").pip_install(
-    "groq",
-    "elevenlabs",
-    "cartesia",
-    "openai",
+def cache_models():
+    from cartesia import Cartesia
+
+    cartesia = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
+    voice_id = "5345cf08-6f37-424d-a5d9-8ae1101b9377"  # Maria
+    voice = cartesia.voices.get(id=voice_id)
+    globals["voice"] = voice
+
+
+image = (
+    Image.debian_slim(python_version="3.11")
+    .pip_install(
+        "groq",
+        "elevenlabs",
+        "cartesia",
+        "openai",
+    )
+    .run_function(cache_models, secrets=[Secret.from_name(secret_name)])
 )
 
 with image.imports():
@@ -50,14 +63,10 @@ def health():
 
 @web_app.websocket("/ws")
 async def transcribe_stream(ws: WebSocket):
-    class WsEvent(Enum):
-        AUDIO_UPDATE = "AUDIO_UPDATE"
-        AUDIO_END = "AUDIO_END"
-        SEND_MESSAGES = "SEND_MESSAGES"
-
     openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
     groq_model = "llama-3.1-70b-versatile"
+    groq_small_model = "llama-3.1-8b-instant"
     openai_model = "gpt-4o-mini"
     elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
     cartesia = Cartesia(api_key=os.environ.get("CARTESIA_API_KEY"))
@@ -280,11 +289,6 @@ async def transcribe_stream(ws: WebSocket):
             )
             return dict(content=content, tool_name=None, tool_res=None)
 
-    def hardcoded_ai(transcription: str, messages) -> dict[str, str]:
-        return dict(
-            content="Would you rather be tied up or do the tying?",
-        )
-
     async def elevenlabs_speech(ws: WebSocket, ai_response: str):
         generator = elevenlabs.generate(
             text=ai_response,
@@ -353,6 +357,24 @@ async def transcribe_stream(ws: WebSocket):
         finally:
             cartesia_ws.close()
 
+    async def is_user_intent_to_chat(messages) -> bool:
+        print("is_user_intent_to_chat")
+        completion = groq.chat.completions.create(
+            model=groq_small_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Determine if this the user is chatting with you or not. Respond with true if they are chatting with you, and false if they are not. ONLY respond with true or false.",
+                },
+                {
+                    "role": "user",
+                    "content": f"Chat history:\n\n{json.dumps(messages)}",
+                },
+            ],
+        )
+        print("completion: ", completion.choices[0].message.content)
+        return completion.choices[0].message.content == "true"
+
     async def core(
         *,
         ws: WebSocket,
@@ -361,6 +383,11 @@ async def transcribe_stream(ws: WebSocket):
         print("Starting core")
 
         try:
+            print("Checking user intent to chat")
+            user_has_intent_to_chat = await is_user_intent_to_chat(messages)
+            if not user_has_intent_to_chat:
+                await ws.send_json(dict(event="no_intent_to_chat"))
+                return
             ai_response = ai(messages)
         except Exception as e:
             print(e)
@@ -373,10 +400,37 @@ async def transcribe_stream(ws: WebSocket):
         print("ai_response: ", ai_response)
         ai_content = ai_response["content"]
 
-        await elevenlabs_speech(ws, ai_content)
-        # await cartesia_speech(ws, ai_content)
+        # await elevenlabs_speech(ws, ai_content)
+        await cartesia_speech(ws, ai_content)
 
-        await ws.send_json(dict(role="assistant", **ai_response))
+        completion = groq.chat.completions.create(
+            model=groq_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": """Determine if you want to continue listening to the user. For one-off
+    questions, you should not continue listening. For follow-up questions, you should continue listening.
+    Respond with a boolean value, true if you should continue listening, false if you should stop listening.
+    """,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        [*messages, dict(role="assistant", **ai_content)]
+                    ),
+                },
+            ],
+        )
+        print("completion: ", completion.choices[0].message.content)
+        should_continue_listening = completion.choices[0].message.content == "true"
+        print("should_continue_listening: ", should_continue_listening)
+        await ws.send_json(
+            dict(
+                role="assistant",
+                should_continue_listening=should_continue_listening,
+                **ai_response,
+            )
+        )
 
     try:
         await ws.accept()

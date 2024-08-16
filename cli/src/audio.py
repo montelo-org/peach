@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import multiprocessing
-from typing import AsyncGenerator, BinaryIO, Tuple
+from typing import BinaryIO
 
 import numpy as np
 import soundfile as sf
@@ -50,9 +49,7 @@ class Audio:
         return Audio(self.data[int(ts * SAMPLES_PER_SECOND) :], start=ts)
 
     def extend(self, data: NDArray[np.float32]) -> None:
-        # logger.debug(f"Extending audio by {len(data) / SAMPLES_PER_SECOND:.2f}s")
         self.data = np.append(self.data, data)
-        # logger.debug(f"Audio duration: {self.duration:.2f}s")
 
 
 class AudioStream:
@@ -67,33 +64,4 @@ class AudioStream:
     def close(self) -> None:
         assert not self.closed
         self.closed = True
-        self.data_queue.put(None)  # Sentinel value to signal end of stream
-
-    async def chunks(
-        self, min_duration: float
-    ) -> AsyncGenerator[Tuple[float, NDArray[np.float32]], None]:
-        buffer = np.array([], dtype=np.float32)
-        last_timestamp = None
-        while True:
-            try:
-                while not self.data_queue.empty():
-                    timestamp, chunk = (
-                        self.data_queue.get_nowait()
-                    )  # Unpack timestamp and data
-                    if chunk is None:  # Check for sentinel value
-                        self.closed = True
-                        break
-                    last_timestamp = timestamp
-                    buffer = np.append(buffer, chunk)
-            except Exception:
-                pass
-
-            if len(buffer) / SAMPLES_PER_SECOND >= min_duration or self.closed:
-                yield (last_timestamp, buffer)  # Yield both timestamp and buffer
-                buffer = np.array([], dtype=np.float32)
-
-            if self.closed and len(buffer) == 0:
-                return
-
-            if not self.closed:
-                await asyncio.sleep(0.1)
+        self.data_queue.put(None)
