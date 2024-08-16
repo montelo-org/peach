@@ -33,7 +33,7 @@ def list_audio_devices(p: PyAudio):
             print(f"Device {i}: {device_info.get('name')}")
             try:
                 # Try to open the device with different sample rates
-                for rate in [8000, 16000, 32000, 44100, 48000]:
+                for rate in [16000, 32000, 44100, 48000]:
                     stream = p.open(
                         format=paInt16,
                         channels=1,
@@ -57,6 +57,7 @@ def get_stream() -> Tuple[Stream, PyAudio]:
     # another stream is created in worker_core that is used for recording
     p = PyAudio()
     list_audio_devices(p)
+    print("Reached here")
     stream = p.open(
         format=paInt16,
         channels=constants.CORRECT_NUM_CHANNELS,
@@ -65,6 +66,7 @@ def get_stream() -> Tuple[Stream, PyAudio]:
         frames_per_buffer=constants.CORRECT_FRAME_LENGTH,
         input_device_index=input_device_index,
     )
+    print("wow")
     return stream, p
 
 

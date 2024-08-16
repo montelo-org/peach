@@ -6,6 +6,7 @@ from halo import Halo
 from custom_logger import logger
 from constants import CORRECT_FRAME_LENGTH, SAMPLE_RATE
 from utils import get_stream
+import constants
 
 
 # logs all recording devices
@@ -20,7 +21,7 @@ def _log_devices(p: PyAudio) -> None:
 def setup() -> None:
     p = None
     stream = None
-    
+
     try:
         stream, p = get_stream()
 
@@ -28,7 +29,7 @@ def setup() -> None:
 
         frame_length = stream._frames_per_buffer
         sample_rate = stream._rate
-        correct_sample_rate = int(os.getenv("SAMPLE_RATE"))
+        correct_sample_rate = constants.SAMPLE_RATE
 
         if frame_length != CORRECT_FRAME_LENGTH:
             logger.error(
