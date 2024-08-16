@@ -53,7 +53,6 @@ def get_stream() -> Tuple[Stream, PyAudio]:
         frames_per_buffer=constants.CORRECT_FRAME_LENGTH,
         input_device_index=input_device_index,
     )
-    logger.info("wow")
     return stream, p
 
 
