@@ -18,6 +18,9 @@ def _log_devices(p: PyAudio) -> None:
 # peforms basic recording/api checks
 # checks sample rate, frame length, api health, etc.
 def setup() -> None:
+    p = None
+    stream = None
+    
     try:
         stream, p = get_stream()
 
@@ -59,5 +62,6 @@ def setup() -> None:
         logger.error(f"Error during setup: {e}")
         exit(1)
     finally:
-        p.close(stream)
-        p.terminate()
+        if p and stream:
+            p.close(stream)
+            p.terminate()
