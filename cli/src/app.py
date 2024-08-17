@@ -403,8 +403,8 @@ async def worker_transcription(
 
 
 # this worker (running in a separate process) handles recording and websocket communication
-# TODO: now that I'm writing this out, we could have a separate worker for recording and another for websocket
-# might be a big refactor because they share some state
+# now that I'm writing this out, we could have a separate worker for recording and another for websocket
+# NEVERMIND, the reason they're on the same thread is because they're I/O bound not CPU bound
 async def worker_core(
     audio_queue: multiprocessing.Queue,
     shared_transcription: multiprocessing.Value,
@@ -430,7 +430,6 @@ async def worker_core(
 def main() -> None:
     logger.info("🍑 Peach\n")
 
-    # check api health
     check_api_health()
 
     # create shared variables among processes
