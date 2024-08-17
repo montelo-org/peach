@@ -411,7 +411,6 @@ async def worker_core(
     last_audio_timestamp: multiprocessing.Value,
 ) -> None:
     logger.info("Running worker core!")
-
     async with asyncio.TaskGroup() as tg:
         tg.create_task(
             task_ws_handler(
