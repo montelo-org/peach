@@ -15,7 +15,13 @@ class FasterWhisperASR:
         whisper_model: str,
         **kwargs,
     ) -> None:
-        self.whisper = WhisperModel(whisper_model, device="cpu", compute_type="int8")
+        self.whisper = WhisperModel(
+            whisper_model,
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=4,
+            num_workers=2,
+        )
         self.transcribe_opts = kwargs
 
     def _transcribe(
