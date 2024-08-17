@@ -18,7 +18,7 @@ class FasterWhisperASR:
         self.whisper = WhisperModel(
             whisper_model,
             device="cpu",
-            compute_type="int8",
+            compute_type="int8_float32",
             cpu_threads=4,
             num_workers=2,
         )
