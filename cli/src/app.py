@@ -20,8 +20,8 @@ from realtime_whisper.asr import FasterWhisperASR
 from realtime_whisper.transcriber import LocalAgreement, needs_audio_after, prompt
 from realtime_whisper.audio import Audio, AudioStream, audio_samples_from_file
 from realtime_whisper.core import Transcription
-from setup import setup
-from utils import get_stream, run_async_worker, check_peach
+from setup import check_recording_params, check_api_health
+from utils import run_async_worker, check_peach
 from db import db_update_state
 import constants
 from custom_logger import logger
@@ -56,84 +56,99 @@ async def task_record(
     *,
     audio_queue: multiprocessing.Queue,
     last_audio_timestamp: multiprocessing.Value,
+    shutdown_event: multiprocessing.Event,
 ) -> None:
-    logger.info("Recording started, start speaking!")
+    stream, p = check_recording_params()
 
-    stream, p = get_stream()
+    try:
+        logger.info("Recording started, start speaking!")
 
-    vad = webrtcvad.Vad(constants.VAD_MODE)
-    consecutive_silence_frames = 0
-    audio_stream = AudioStream(audio_queue)
+        # check recording params and get stream
 
-    chunk_buffer = np.array([], dtype=np.float32)
+        vad = webrtcvad.Vad(constants.VAD_MODE)
+        consecutive_silence_frames = 0
+        audio_stream = AudioStream(audio_queue)
 
-    while True:
-        # Small sleep to prevent busy-waiting
-        await asyncio.sleep(constants.SLEEP_TIME)
+        chunk_buffer = np.array([], dtype=np.float32)
 
-        if RECORDER_LOCK.locked():
-            continue
+        while not shutdown_event.is_set():
+            # Small sleep to prevent busy-waiting
+            await asyncio.sleep(constants.SLEEP_TIME)
 
-        pcm = stream.read(constants.SAMPLES_PER_FRAME, exception_on_overflow=False)
-        if not pcm:
-            continue
+            if RECORDER_LOCK.locked():
+                continue
 
-        pcm_array = np.frombuffer(pcm, dtype=np.int16)
-        # Resample from 44100 Hz to 16000 Hz
-        resampled_pcm = scipy.signal.resample(
-            pcm_array, int(len(pcm_array) * 16000 / 44100)
-        )
-        audio_samples = audio_samples_from_file(
-            BytesIO(resampled_pcm.astype(np.int16).tobytes())
-        )
+            pcm = stream.read(constants.SAMPLES_PER_FRAME, exception_on_overflow=False)
+            if not pcm:
+                continue
 
-        # Add samples to the chunk buffer
-        chunk_buffer = np.append(chunk_buffer, audio_samples)
+            pcm_array = np.frombuffer(pcm, dtype=np.int16)
+            # Resample from 44100 Hz to 16000 Hz
+            resampled_pcm = scipy.signal.resample(
+                pcm_array, int(len(pcm_array) * 16000 / 44100)
+            )
+            audio_samples = audio_samples_from_file(
+                BytesIO(resampled_pcm.astype(np.int16).tobytes())
+            )
 
-        # Check if we have collected 1 second of audio
-        if len(chunk_buffer) >= constants.SAMPLE_RATE:
-            current_time = int(time.time())
-            # Send the 1-second chunk to the audio queue
-            audio_stream.extend(chunk_buffer[: constants.SAMPLE_RATE], current_time)
-            # Keep any remaining samples for the next chunk
-            chunk_buffer = chunk_buffer[constants.SAMPLE_RATE :]
+            # Add samples to the chunk buffer
+            chunk_buffer = np.append(chunk_buffer, audio_samples)
 
-        if HEY_PEACH_DETECTED_LOCK.locked() and not USER_ENDED_SPEAKING_EVENT.is_set():
-            try:
-                # Ensure we have exactly the right number of bytes
-                if len(pcm) != constants.FRAME_SIZE_BYTES:
-                    logger.warning(
-                        f"Unexpected frame size: {len(pcm)} bytes, expected {constants.FRAME_SIZE_BYTES}"
-                    )
-                    continue
+            # Check if we have collected 1 second of audio
+            if len(chunk_buffer) >= constants.SAMPLE_RATE:
+                current_time = int(time.time())
+                # Send the 1-second chunk to the audio queue
+                audio_stream.extend(chunk_buffer[: constants.SAMPLE_RATE], current_time)
+                # Keep any remaining samples for the next chunk
+                chunk_buffer = chunk_buffer[constants.SAMPLE_RATE :]
 
-                is_speech = vad.is_speech(pcm, constants.SAMPLE_RATE)
+            if (
+                HEY_PEACH_DETECTED_LOCK.locked()
+                and not USER_ENDED_SPEAKING_EVENT.is_set()
+            ):
+                try:
+                    # Ensure we have exactly the right number of bytes
+                    if len(pcm) != constants.FRAME_SIZE_BYTES:
+                        logger.warning(
+                            f"Unexpected frame size: {len(pcm)} bytes, expected {constants.FRAME_SIZE_BYTES}"
+                        )
+                        continue
 
-                if is_speech:
-                    consecutive_silence_frames = 0
-                else:
-                    consecutive_silence_frames += 1
+                    is_speech = vad.is_speech(pcm, constants.SAMPLE_RATE)
 
-                if (
-                    consecutive_silence_frames
-                    >= constants.CONSECUTIVE_SILENCE_THRESHOLD
-                ):
-                    logger.info(
-                        f"🔇 User ended speaking, locking, last timestamp is {current_time}"
-                    )
-                    await RECORDER_LOCK.acquire()
-                    USER_ENDED_SPEAKING_EVENT.set()
-                    last_audio_timestamp.value = current_time
+                    if is_speech:
+                        consecutive_silence_frames = 0
+                    else:
+                        consecutive_silence_frames += 1
 
-                    # Send any remaining audio in the buffer
-                    if len(chunk_buffer) > 0:
-                        audio_stream.extend(chunk_buffer, current_time)
+                    if (
+                        consecutive_silence_frames
+                        >= constants.CONSECUTIVE_SILENCE_THRESHOLD
+                    ):
+                        logger.info(
+                            f"🔇 User ended speaking, locking, last timestamp is {current_time}"
+                        )
+                        await RECORDER_LOCK.acquire()
+                        USER_ENDED_SPEAKING_EVENT.set()
+                        last_audio_timestamp.value = current_time
 
-            except Exception as e:
-                logger.error(f"Error in VAD processing: {e}")
-                logger.error(f"Frame size: {len(pcm)} bytes")
-                logger.error(f"Frame content (first 10 bytes): {pcm[:10]}")
-                continue  # Skip this frame and continue with the next one
+                        # Send any remaining audio in the buffer
+                        if len(chunk_buffer) > 0:
+                            audio_stream.extend(chunk_buffer, current_time)
+
+                except Exception as e:
+                    logger.error(f"Error in VAD processing: {e}")
+                    logger.error(f"Frame size: {len(pcm)} bytes")
+                    logger.error(f"Frame content (first 10 bytes): {pcm[:10]}")
+                    continue  # Skip this frame and continue with the next one
+    finally:
+        logger.info("Recording stopped")
+        if stream:
+            stream.stop_stream()
+            stream.close()()
+        if p:
+            p.terminate()
+        logger.info("Audio resources cleaned up")
 
 
 # this task is responsible for reading from the recorder queue and sending the data to the api
@@ -142,11 +157,12 @@ async def task_ws_sender(
     shared_transcription: multiprocessing.Value,
     ws: websockets.WebSocketClientProtocol,
     last_audio_timestamp: multiprocessing.Value,
+    shutdown_event: multiprocessing.Event,
 ):
     processed_transcription = ""
 
     try:
-        while True:
+        while not shutdown_event.is_set():
             # Pause briefly to avoid blocking the event loop
             await asyncio.sleep(constants.SLEEP_TIME)
 
@@ -208,7 +224,11 @@ async def task_ws_sender(
         logger.info("Closed websocket sender")
 
 
-async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
+async def task_ws_receiver(
+    *,
+    ws: websockets.WebSocketClientProtocol,
+    shutdown_event: multiprocessing.Event,
+) -> None:
     logger.info("Inside task ws receiver")
     # this is the sample rate that elevenlabs use
     # i believe cartesia also uses 24k
@@ -218,7 +238,7 @@ async def task_ws_receiver(*, ws: websockets.WebSocketClientProtocol):
     stream.start()
 
     try:
-        while True:
+        while not shutdown_event.is_set():
             await asyncio.sleep(constants.SLEEP_TIME)
 
             if ws.closed:
@@ -319,6 +339,7 @@ async def task_ws_handler(
     *,
     shared_transcription: multiprocessing.Value,
     last_audio_timestamp: multiprocessing.Value,
+    shutdown_event: multiprocessing.Event,
 ) -> None:
     ws = None
 
@@ -334,9 +355,15 @@ async def task_ws_handler(
                     ws=ws,
                     shared_transcription=shared_transcription,
                     last_audio_timestamp=last_audio_timestamp,
+                    shutdown_event=shutdown_event,
                 )
             )
-            tg.create_task(task_ws_receiver(ws=ws))
+            tg.create_task(
+                task_ws_receiver(
+                    ws=ws,
+                    shutdown_event=shutdown_event,
+                )
+            )
     except* Exception as exc:
         logger.error(f"An error occurred in the WebSocket handler: {exc}")
     finally:
@@ -400,6 +427,7 @@ async def worker_core(
     audio_queue: multiprocessing.Queue,
     shared_transcription: multiprocessing.Value,
     last_audio_timestamp: multiprocessing.Value,
+    shutdown_event: multiprocessing.Event,
 ) -> None:
     logger.info("Running worker core!")
 
@@ -408,12 +436,14 @@ async def worker_core(
             task_ws_handler(
                 shared_transcription=shared_transcription,
                 last_audio_timestamp=last_audio_timestamp,
+                shutdown_event=shutdown_event,
             )
         )
         tg.create_task(
             task_record(
                 audio_queue=audio_queue,
                 last_audio_timestamp=last_audio_timestamp,
+                shutdown_event=shutdown_event,
             )
         )
 
@@ -421,8 +451,8 @@ async def worker_core(
 def main() -> None:
     logger.info("🍑 Peach\n")
 
-    # basic recording/api checks
-    setup()
+    # check api health
+    check_api_health()
 
     # create shared variables among processes
     manager = multiprocessing.Manager()
@@ -432,6 +462,8 @@ def main() -> None:
     shared_transcription = manager.Value(ctypes.c_wchar_p, "")
     # holds the timestamp of the last audio chunk before silence is detected after "peach" is detected
     last_audio_timestamp = manager.Value(ctypes.c_int, 0)
+    # event to signal the app to shutdown
+    shutdown_event = manager.Event()
 
     # define the processes
     p_core = multiprocessing.Process(
@@ -441,6 +473,7 @@ def main() -> None:
             audio_queue,
             shared_transcription,
             last_audio_timestamp,
+            shutdown_event,
         ),
     )
     p_transcription = multiprocessing.Process(
@@ -465,6 +498,8 @@ def main() -> None:
         p_transcription.join()
     except Exception as e:
         logger.error(f"An unexpected error occurred: {e}")
+
+        shutdown_event.set()
 
         # terminate the processes
         p_core.terminate()
